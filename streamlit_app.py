@@ -9,81 +9,383 @@ import time
 load_dotenv()
 
 st.set_page_config(
-    page_title="Mental Health Detector",
+    page_title="MindScan",
     page_icon="🧠",
     layout="centered"
 )
 
+# ══════════════════════════════════════════════════════════
+# CSS
+# ══════════════════════════════════════════════════════════
 st.markdown("""
 <style>
-    @keyframes slideIn {
-        from { opacity: 0; transform: translateY(30px); }
-        to   { opacity: 1; transform: translateY(0px);  }
-    }
-    @keyframes pulse {
-        0%   { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4); }
-        70%  { box-shadow: 0 0 0 10px rgba(239, 68, 68, 0); }
-        100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0);   }
-    }
-    .chat-container { animation: slideIn 0.5s ease-out; }
-    .crisis-banner {
-        animation: slideIn 0.4s ease-out, pulse 2s infinite;
-        background: linear-gradient(135deg, #7f1d1d, #991b1b);
-        border-radius: 12px;
-        padding: 20px;
-        color: white;
-        margin-bottom: 20px;
-    }
-    .crisis-number {
-        background: rgba(255,255,255,0.15);
-        border-radius: 8px;
-        padding: 12px 16px;
-        margin: 8px 0;
-        font-size: 16px;
-        font-weight: 500;
-    }
-    .mood-badge-crisis  { background:#fee2e2; color:#991b1b; padding:4px 12px; border-radius:20px; font-size:13px; font-weight:500; }
-    .mood-badge-warning { background:#fef3c7; color:#92400e; padding:4px 12px; border-radius:20px; font-size:13px; font-weight:500; }
-    .mood-badge-normal  { background:#d1fae5; color:#065f46; padding:4px 12px; border-radius:20px; font-size:13px; font-weight:500; }
-    .suggest-box {
-        animation: slideIn 0.5s ease-out;
-        border-left: 4px solid #6366f1;
-        padding: 16px;
-        border-radius: 8px;
-        margin-top: 16px;
-        background: rgba(99,102,241,0.05);
-    }
+@import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@300;400;500&display=swap');
+
+.stApp {
+    background: #07061a;
+    font-family: 'DM Sans', sans-serif;
+}
+.stApp > div:first-child {
+    background:
+        radial-gradient(ellipse 80% 50% at 10% 0%, rgba(124,58,237,0.22) 0%, transparent 60%),
+        radial-gradient(ellipse 60% 40% at 90% 100%, rgba(56,189,248,0.15) 0%, transparent 60%),
+        radial-gradient(ellipse 50% 60% at 50% 50%, rgba(79,70,229,0.08) 0%, transparent 70%);
+    min-height: 100vh;
+}
+
+#MainMenu, footer, header { visibility: hidden; }
+.block-container {
+    padding-top: 1.5rem !important;
+    padding-bottom: 3rem !important;
+    padding-left: 2rem !important;
+    padding-right: 2rem !important;
+    max-width: 900px !important;
+}
+
+@keyframes slideUp {
+    from { opacity:0; transform:translateY(20px); }
+    to   { opacity:1; transform:translateY(0);    }
+}
+@keyframes gradMove {
+    0%   { background-position: 0% 50%;   }
+    50%  { background-position: 100% 50%; }
+    100% { background-position: 0% 50%;   }
+}
+@keyframes bob {
+    0%,100% { transform: translateY(0px);  }
+    50%     { transform: translateY(-4px); }
+}
+@keyframes pulseRed {
+    0%,100% { border-color: rgba(239,68,68,0.3); }
+    50%     { border-color: rgba(239,68,68,0.7); }
+}
+@keyframes glowDot {
+    0%,100% { opacity:1; }
+    50%     { opacity:0.3; }
+}
+
+/* ── Topbar ── */
+.topbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 24px;
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.07);
+    border-radius: 18px;
+    margin-bottom: 28px;
+    animation: slideUp 0.4s ease-out;
+    backdrop-filter: blur(20px);
+}
+.topbar-brand {
+    font-family: 'Syne', sans-serif;
+    font-size: 1.1rem;
+    font-weight: 800;
+    background: linear-gradient(90deg, #a78bfa, #38bdf8);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    white-space: nowrap;
+}
+.topbar-nav {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+.nav-pill {
+    padding: 7px 16px;
+    border-radius: 40px;
+    font-family: 'Syne', sans-serif;
+    font-size: 0.78rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    border: 1px solid transparent;
+    white-space: nowrap;
+}
+.nav-pill.active {
+    background: rgba(124,58,237,0.22);
+    border-color: rgba(124,58,237,0.5);
+    color: #c4b5fd;
+}
+.nav-pill.inactive {
+    background: transparent;
+    border-color: rgba(255,255,255,0.08);
+    color: rgba(255,255,255,0.45);
+}
+.nav-pill.inactive:hover {
+    background: rgba(255,255,255,0.05);
+    border-color: rgba(255,255,255,0.15);
+    color: rgba(255,255,255,0.75);
+}
+.nav-pill.mello-pill {
+    background: linear-gradient(135deg, rgba(124,58,237,0.3), rgba(56,189,248,0.2));
+    border-color: rgba(124,58,237,0.4);
+    color: #c4b5fd;
+    animation: bob 3s ease-in-out infinite;
+}
+
+/* ── Buttons ── */
+.stButton > button[kind="secondary"] {
+    background: rgba(255,255,255,0.04) !important;
+    border: 1px solid rgba(255,255,255,0.1) !important;
+    border-radius: 40px !important;
+    color: rgba(255,255,255,0.55) !important;
+    font-family: 'Syne', sans-serif !important;
+    font-weight: 600 !important;
+    font-size: 0.83rem !important;
+    letter-spacing: 0.03em !important;
+    padding: 10px 20px !important;
+    transition: all 0.2s ease !important;
+}
+.stButton > button[kind="secondary"]:hover {
+    background: rgba(124,58,237,0.12) !important;
+    border-color: rgba(124,58,237,0.35) !important;
+    color: #c4b5fd !important;
+    transform: translateY(-1px) !important;
+}
+.stButton > button[kind="primary"] {
+    background: linear-gradient(135deg, #7c3aed, #4f46e5, #0ea5e9) !important;
+    background-size: 200% 200% !important;
+    animation: gradMove 3s ease infinite !important;
+    border: none !important;
+    border-radius: 40px !important;
+    color: white !important;
+    font-family: 'Syne', sans-serif !important;
+    font-size: 0.83rem !important;
+    font-weight: 700 !important;
+    padding: 10px 20px !important;
+    letter-spacing: 0.04em !important;
+    box-shadow: 0 4px 20px rgba(124,58,237,0.35) !important;
+}
+.stButton > button[kind="primary"]:hover {
+    transform: translateY(-2px) !important;
+    box-shadow: 0 8px 28px rgba(124,58,237,0.5) !important;
+}
+/* ── Textarea ── */
+.stTextArea > label {
+    color: rgba(255,255,255,0.3) !important;
+    font-size: 0.75rem !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.1em !important;
+    font-family: 'Syne', sans-serif !important;
+}
+.stTextArea textarea {
+    background: rgba(255,255,255,0.03) !important;
+    border: 1px solid rgba(255,255,255,0.1) !important;
+    border-radius: 16px !important;
+    color: rgba(255,255,255,0.88) !important;
+    font-family: 'DM Sans', sans-serif !important;
+    font-size: 0.95rem !important;
+    line-height: 1.75 !important;
+    transition: border 0.2s, box-shadow 0.2s !important;
+}
+.stTextArea textarea:focus {
+    border-color: rgba(124,58,237,0.6) !important;
+    box-shadow: 0 0 0 4px rgba(124,58,237,0.1) !important;
+}
+.stTextArea textarea::placeholder {
+    color: rgba(255,255,255,0.2) !important;
+}
+
+/* ── Metrics ── */
+div[data-testid="metric-container"] {
+    background: rgba(255,255,255,0.04) !important;
+    border: 1px solid rgba(255,255,255,0.08) !important;
+    border-radius: 18px !important;
+    padding: 20px !important;
+    animation: slideUp 0.5s ease-out !important;
+    transition: all 0.2s ease !important;
+}
+div[data-testid="metric-container"]:hover {
+    border-color: rgba(124,58,237,0.3) !important;
+    transform: translateY(-2px) !important;
+}
+div[data-testid="metric-container"] label {
+    color: rgba(255,255,255,0.35) !important;
+    font-size: 0.68rem !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.12em !important;
+    font-family: 'Syne', sans-serif !important;
+    font-weight: 700 !important;
+}
+div[data-testid="metric-container"] div[data-testid="stMetricValue"] {
+    color: white !important;
+    font-family: 'Syne', sans-serif !important;
+    font-size: 1.5rem !important;
+    font-weight: 800 !important;
+}
+
+/* ── Alerts ── */
+.stAlert {
+    border-radius: 14px !important;
+    border-left-width: 3px !important;
+    animation: slideUp 0.4s ease-out !important;
+    font-family: 'DM Sans', sans-serif !important;
+}
+
+/* ── Chat ── */
+div[data-testid="stChatMessage"] {
+    background: rgba(255,255,255,0.03) !important;
+    border: 1px solid rgba(255,255,255,0.07) !important;
+    border-radius: 18px !important;
+    margin: 8px 0 !important;
+    animation: slideUp 0.3s ease-out !important;
+}
+div[data-testid="stChatMessageContent"] p {
+    color: rgba(255,255,255,0.85) !important;
+    font-family: 'DM Sans', sans-serif !important;
+    line-height: 1.7 !important;
+}
+div[data-testid="stChatInput"] > div {
+    background: rgba(255,255,255,0.04) !important;
+    border: 1px solid rgba(255,255,255,0.1) !important;
+    border-radius: 16px !important;
+}
+div[data-testid="stChatInput"] textarea {
+    color: white !important;
+    font-family: 'DM Sans', sans-serif !important;
+}
+
+/* ── Misc ── */
+hr { border-color: rgba(255,255,255,0.06) !important; margin: 16px 0 !important; }
+.stSpinner > div { border-top-color: #7c3aed !important; }
+.stCaption p { color: rgba(255,255,255,0.28) !important; font-size:0.75rem !important; }
+p, li { color: rgba(255,255,255,0.7); font-family:'DM Sans',sans-serif; line-height:1.75; }
+h1,h2,h3 { font-family:'Syne',sans-serif !important; color:white !important; }
+
+/* ── Custom components ── */
+.hero-title {
+    font-family: 'Syne', sans-serif;
+    font-size: clamp(2.2rem, 5vw, 3.2rem);
+    font-weight: 800;
+    background: linear-gradient(100deg, #a78bfa 0%, #60a5fa 45%, #34d399 90%);
+    background-size: 200% auto;
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    animation: gradMove 4s ease infinite;
+    line-height: 1.1;
+    letter-spacing: -0.02em;
+    text-align: center;
+}
+.hero-sub {
+    text-align: center;
+    color: rgba(255,255,255,0.35);
+    font-size: 0.92rem;
+    font-family: 'DM Sans', sans-serif;
+    font-weight: 300;
+    letter-spacing: 0.05em;
+    margin-top: 8px;
+}
+.hero-bar {
+    width: 48px; height: 3px;
+    background: linear-gradient(90deg, #7c3aed, #38bdf8);
+    border-radius: 2px;
+    margin: 14px auto 0;
+}
+.section-label {
+    font-family: 'Syne', sans-serif;
+    font-size: 0.65rem;
+    font-weight: 700;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: rgba(255,255,255,0.28);
+    margin-bottom: 10px;
+    margin-top: 4px;
+}
+.suggest-box {
+    background: linear-gradient(135deg,
+        rgba(124,58,237,0.1) 0%,
+        rgba(56,189,248,0.06) 100%);
+    border: 1px solid rgba(124,58,237,0.22);
+    border-radius: 18px;
+    padding: 22px 26px;
+    animation: slideUp 0.5s ease-out;
+}
+.crisis-banner {
+    background: linear-gradient(135deg,
+        rgba(127,29,29,0.88) 0%,
+        rgba(153,27,27,0.88) 100%);
+    border: 1px solid rgba(239,68,68,0.35);
+    border-radius: 20px;
+    padding: 24px 28px;
+    margin-bottom: 20px;
+    animation: slideUp 0.4s ease-out, pulseRed 2s infinite;
+}
+.crisis-row {
+    background: rgba(255,255,255,0.07);
+    border-radius: 10px;
+    padding: 11px 16px;
+    margin: 7px 0;
+    font-family: 'DM Sans', sans-serif;
+    font-size: 14px;
+    color: rgba(255,255,255,0.88);
+}
+.mello-header {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 18px;
+    padding: 16px 22px;
+    margin-bottom: 18px;
+    animation: slideUp 0.4s ease-out;
+}
+.m-avatar {
+    width: 42px; height: 42px;
+    background: linear-gradient(135deg, #7c3aed, #38bdf8);
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 20px; flex-shrink: 0;
+    animation: bob 3s ease-in-out infinite;
+}
+.m-name { font-family:'Syne',sans-serif; font-weight:800; font-size:1.05rem; color:white; }
+.m-status { font-size:0.76rem; color:rgba(255,255,255,0.38); margin-top:1px; }
+.dot-live {
+    display: inline-block;
+    width: 6px; height: 6px;
+    background: #34d399; border-radius: 50%;
+    margin-right: 5px;
+    animation: glowDot 1.5s ease-in-out infinite;
+}
+.pill-red   { display:inline-block; margin:3px; padding:5px 13px; border-radius:20px; font-size:12px; font-weight:500; background:rgba(239,68,68,0.12); border:1px solid rgba(239,68,68,0.28); color:#fca5a5; }
+.pill-green { display:inline-block; margin:3px; padding:5px 13px; border-radius:20px; font-size:12px; font-weight:500; background:rgba(52,211,153,0.1); border:1px solid rgba(52,211,153,0.22); color:#6ee7b7; }
+.badge-c { display:inline-block; background:rgba(239,68,68,0.12); border:1px solid rgba(239,68,68,0.3); color:#fca5a5; padding:4px 14px; border-radius:20px; font-size:11px; font-family:'Syne',sans-serif; font-weight:700; }
+.badge-w { display:inline-block; background:rgba(245,158,11,0.12); border:1px solid rgba(245,158,11,0.3); color:#fcd34d; padding:4px 14px; border-radius:20px; font-size:11px; font-family:'Syne',sans-serif; font-weight:700; }
+.badge-g { display:inline-block; background:rgba(52,211,153,0.12); border:1px solid rgba(52,211,153,0.3); color:#6ee7b7; padding:4px 14px; border-radius:20px; font-size:11px; font-family:'Syne',sans-serif; font-weight:700; }
+.tag { display:inline-block; background:rgba(124,58,237,0.12); border:1px solid rgba(124,58,237,0.22); border-radius:6px; padding:3px 10px; font-size:0.7rem; color:#c4b5fd; font-family:'Syne',sans-serif; font-weight:700; letter-spacing:0.05em; margin:3px 2px; }
+.info-card { background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.07); border-radius:14px; padding:14px 18px; margin-bottom:10px; }
+.footer-txt { text-align:center; font-size:0.65rem; color:rgba(255,255,255,0.15); font-family:'Syne',sans-serif; letter-spacing:0.14em; text-transform:uppercase; padding:12px 0; }
 </style>
 """, unsafe_allow_html=True)
 
-# ── Load ML model ──────────────────────────────────────────
+
+# ── Load model ─────────────────────────────────────────────
 @st.cache_resource
 def load_model():
-    model_path = "models/model.pkl"
-    if not os.path.exists(model_path):
-        st.error("Model not found. Please run train.py first.")
+    p = "models/model.pkl"
+    if not os.path.exists(p):
+        st.error("Model not found. Run train.py first.")
         st.stop()
-    return joblib.load(model_path)
+    return joblib.load(p)
 
 model = load_model()
 
-# ── Groq client ────────────────────────────────────────────
+# ── Groq ───────────────────────────────────────────────────
 @st.cache_resource
 def load_groq():
-    api_key = os.getenv("GROQ_API_KEY") or st.secrets.get("GROQ_API_KEY", None)
-    if not api_key:
+    key = os.getenv("GROQ_API_KEY") or st.secrets.get("GROQ_API_KEY", None)
+    if not key:
         return None
-    return Groq(api_key=api_key)
+    return Groq(api_key=key)
 
 groq_client = load_groq()
 
 # ── Session state ──────────────────────────────────────────
-# page controls which screen is shown:
-# "analyze"  → main analysis form
-# "results"  → results + suggest chatbot button
-# "chat"     → chatbot
-# "crisis"   → crisis chatbot
-for key, default in {
+for k, v in {
     "page":              "analyze",
     "messages":          [],
     "detected_mood":     None,
@@ -91,161 +393,177 @@ for key, default in {
     "text_input":        "",
     "scores":            {},
     "confidence":        0.0,
+    "total_scans":       0,
+    "mood_history":      [],
 }.items():
-    if key not in st.session_state:
-        st.session_state[key] = default
+    if k not in st.session_state:
+        st.session_state[k] = v
 
-# ── Build system prompt ────────────────────────────────────
-def build_system_prompt(mood: str, user_context: str) -> str:
-    context_line = (
-        f"User's text (detected as '{mood}'): \"{user_context[:200]}\"\n\n"
-        if user_context else ""
-    )
-    mood_instructions = {
-        "normal":     "User seems okay. Be warm, ask what is on their mind.",
-        "depression": "User shows depression signs. Validate feelings first. Be gentle. Suggest small steps.",
-        "anxiety":    "User is anxious. Acknowledge it. Offer box breathing. Ask what worries them most.",
-        "stress":     "User is stressed. Empathize. Help them prioritize. Suggest a short break.",
-        "suicidal":   "CRISIS. User may be suicidal. Be present. Ask if they are safe. Share helplines every response: iCall 9152987821, AASRA 91-22-27546669, Tele MANAS 14416.",
-        "bipolar":    "User shows bipolar signs. Be calm and steady. Ask how they feel right now.",
+
+# ── System prompt ──────────────────────────────────────────
+def build_system_prompt(mood, ctx):
+    cl = f"User's text ('{mood}'): \"{ctx[:200]}\"\n\n" if ctx else ""
+    m  = {
+        "normal":     "Warm and welcoming. Ask what is on their mind.",
+        "depression": "Validate first. Never rush to fix. Gentle small steps.",
+        "anxiety":    "Acknowledge exhaustion. 5-4-3-2-1 grounding. Ask main worry.",
+        "stress":     "Empathize with overload. Help prioritize. Suggest one break.",
+        "suicidal":   "CRISIS. Ask if safe. Every reply must end with iCall 9152987821.",
+        "bipolar":    "Be a calm anchor. Ask how they feel right now. No assumptions.",
     }
-    mood_key     = mood.lower()
-    mood_section = mood_instructions.get(mood_key, mood_instructions["normal"])
-    return f"""You are Mitra, a warm empathetic mental health support companion.
-Be like a caring friend — calm, patient, non-judgmental.
-Short conversational responses only. Never diagnose or prescribe.
-{context_line}
-Current mood: {mood}
-Instruction: {mood_section}
+    return f"""You are Mello 🫧 — a gentle warm mental health companion.
+Speak like a caring friend. Never clinical. Never robotic.
+Short warm replies. No bullet lists unless giving coping steps.
+Never diagnose. Always remind professional help exists.
+{cl}Mood: {mood} | Approach: {m.get(mood.lower(), m['normal'])}
+Crisis numbers: iCall 9152987821 | AASRA 91-22-27546669 | Tele MANAS 14416"""
 
-If user mentions self harm or suicide always share:
-iCall: 9152987821 | AASRA: 91-22-27546669 | Tele MANAS: 14416"""
 
-# ── Get Groq response ──────────────────────────────────────
-def get_groq_response(messages: list, mood: str, user_context: str) -> str:
-    if groq_client is None:
-        return (
-            "I'm having trouble connecting right now. 💙\n\n"
-            "📞 **iCall:** 9152987821\n"
-            "📞 **Tele MANAS:** 14416 *(free · 24/7)*"
-        )
+# ── Groq response ──────────────────────────────────────────
+def mello_reply(messages, mood, ctx):
+    if not groq_client:
+        return "I'm having trouble connecting 💙\n\n📞 iCall: 9152987821"
     try:
-        system_prompt = build_system_prompt(mood, user_context)
-        api_messages  = [{"role": "system", "content": system_prompt}]
+        sys_p = build_system_prompt(mood, ctx)
+        msgs  = [{"role": "system", "content": sys_p}]
         for m in messages:
             if m["role"] in ["user", "assistant"]:
-                api_messages.append({"role": m["role"], "content": m["content"]})
-        response = groq_client.chat.completions.create(
+                msgs.append({"role": m["role"], "content": m["content"]})
+        r = groq_client.chat.completions.create(
             model="llama-3.1-8b-instant",
-            messages=api_messages,
+            messages=msgs,
             max_tokens=512,
-            temperature=0.7,
+            temperature=0.75
         )
-        return response.choices[0].message.content
+        return r.choices[0].message.content
     except Exception as e:
-        print(f"DEBUG Groq error: {e}")
-        error_msg = str(e).lower()
-        if "quota" in error_msg or "429" in error_msg or "rate" in error_msg:
-            return "I need a short breather — please wait a moment and try again. 💙\n\n📞 **iCall:** 9152987821"
-        if "api key" in error_msg or "invalid" in error_msg or "401" in error_msg:
-            return "There's a configuration issue. Please check the API key."
-        return "Something went wrong on my end. Please try again. 💙"
+        print(f"Mello error: {e}")
+        err = str(e).lower()
+        if "429" in err or "quota" in err:
+            return "I need a breath — try again in a moment 💙\n\n📞 iCall: 9152987821"
+        return "Something went wrong 💙 Please try again."
 
-# ── Open chatbot ───────────────────────────────────────────
-def open_chatbot(mood: str, user_context: str, crisis: bool = False):
+
+# ── Open Mello ─────────────────────────────────────────────
+def open_mello(mood, ctx, crisis=False):
     st.session_state.messages = []
     st.session_state.page     = "crisis" if crisis else "chat"
-
     if crisis:
         opening = (
-            "I'm really glad you're here right now. 💙\n\n"
-            "I can see you might be going through something very painful. "
-            "You don't have to face this alone.\n\n"
-            "Before anything else — are you safe right now?\n\n"
+            "Hey, I'm really glad you reached out. 💙\n\n"
+            "You don't have to face this alone — I'm right here.\n\n"
+            "First — are you safe right now?\n\n"
             "📞 **iCall:** 9152987821\n"
             "📞 **AASRA:** 91-22-27546669\n"
-            "📞 **Vandrevala Foundation:** 1860-2662-345 *(24/7)*\n"
+            "📞 **Vandrevala:** 1860-2662-345 *(24/7)*\n"
             "📞 **Tele MANAS:** 14416 *(free · 24/7)*\n\n"
-            "I'm here. Take your time."
+            "I'm here. Take your time. 🫧"
         )
     else:
-        seed = [{
-            "role": "user",
-            "content": (
-                f"The user wrote this text detected as '{mood}':\n"
-                f"\"{user_context[:300]}\"\n\n"
-                f"Greet them warmly, acknowledge ONE specific thing from their "
-                f"text like a friend would, then ask one gentle open question. "
-                f"Keep it short and warm."
-                if user_context
-                else "I just came to chat. Please greet me warmly."
-            )
-        }]
-        opening = get_groq_response(seed, mood, user_context)
-
+        seed = [{"role": "user", "content": (
+            f"User text detected as '{mood}':\n\"{ctx[:300]}\"\n\n"
+            f"Greet as Mello. Acknowledge ONE thing from their text. "
+            f"Ask one gentle open question. Keep it short and warm."
+            if ctx else
+            "I just came to chat. Greet me warmly as Mello."
+        )}]
+        opening = mello_reply(seed, mood, ctx)
     st.session_state.messages.append({"role": "assistant", "content": opening})
 
 
 # ══════════════════════════════════════════════════════════
-# SIDEBAR
+# TOPBAR — always visible
 # ══════════════════════════════════════════════════════════
-with st.sidebar:
-    st.title("🧠 MindScan")
-    st.divider()
+def render_topbar():
+    page        = st.session_state.page
+    has_results = bool(st.session_state.detected_mood and st.session_state.scores)
 
-    if st.session_state.detected_mood:
-        mood = st.session_state.detected_mood.lower()
-        if mood == "suicidal":
-            badge = f'<span class="mood-badge-crisis">🚨 {st.session_state.detected_mood.title()}</span>'
-        elif mood in ["depression", "anxiety", "stress", "bipolar"]:
-            badge = f'<span class="mood-badge-warning">⚠️ {st.session_state.detected_mood.title()}</span>'
-        else:
-            badge = f'<span class="mood-badge-normal">✅ {st.session_state.detected_mood.title()}</span>'
-        st.markdown(f"**Last detected mood:**<br>{badge}", unsafe_allow_html=True)
-        st.divider()
+    a_analyze = page == "analyze"
+    a_results = page == "results"
+    a_mello   = page in ["chat", "crisis"]
 
-    page = st.session_state.page
+    # Brand row
+    st.markdown("""
+    <div style="display:flex;align-items:center;justify-content:space-between;
+                padding:16px 20px;
+                background:rgba(255,255,255,0.03);
+                border:1px solid rgba(255,255,255,0.07);
+                border-radius:18px;
+                margin-bottom:8px;">
+        <div style="font-family:'Syne',sans-serif;font-size:1.1rem;font-weight:800;
+                    background:linear-gradient(90deg,#a78bfa,#38bdf8);
+                    -webkit-background-clip:text;-webkit-text-fill-color:transparent;
+                    background-clip:text;">
+            🧠 MindScan
+        </div>
+        <div style="font-size:0.72rem;color:rgba(255,255,255,0.25);
+                    font-family:'Syne',sans-serif;letter-spacing:0.1em;">
+            MENTAL HEALTH AI
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
 
-    if page in ["chat", "crisis"]:
-        if st.button("🔍 Back to Analysis", use_container_width=True):
-            st.session_state.page = "analyze"
-            st.rerun()
-        if st.button("🗑️ Clear Chat", use_container_width=True):
-            open_chatbot(
-                st.session_state.detected_mood or "normal",
-                st.session_state.user_text_context,
-                crisis=(page == "crisis")
-            )
-            st.rerun()
-    elif page == "results":
-        if st.button("🔍 New Analysis", use_container_width=True):
-            st.session_state.page = "analyze"
-            st.rerun()
-        if st.button("💬 Open Support Chat", use_container_width=True, key="sidebar_chat"):
-            open_chatbot(
-                st.session_state.detected_mood,
-                st.session_state.user_text_context,
-                crisis=False
-            )
-            st.rerun()
+    # Nav buttons row using actual Streamlit columns
+    st.markdown("""
+    <style>
+    /* Nav button row container */
+    div[data-testid="stHorizontalBlock"]:has(button[data-nav="true"]) {
+        gap: 8px !important;
+        margin-bottom: 24px !important;
+    }
+
+    /* All nav buttons base */
+    button[data-nav="true"] {
+        border-radius: 40px !important;
+        font-family: 'Syne', sans-serif !important;
+        font-weight: 600 !important;
+        font-size: 0.83rem !important;
+        letter-spacing: 0.04em !important;
+        padding: 10px 20px !important;
+        border: 1px solid rgba(255,255,255,0.1) !important;
+        background: rgba(255,255,255,0.05) !important;
+        color: rgba(255,255,255,0.6) !important;
+        transition: all 0.2s ease !important;
+        width: 100% !important;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
+    if has_results:
+        nc1, nc2, nc3 = st.columns(3)
     else:
-        if st.session_state.detected_mood:
-            if st.button("💬 Open Support Chat", use_container_width=True, key="sidebar_chat_analyze"):
-                open_chatbot(
-                    st.session_state.detected_mood,
-                    st.session_state.user_text_context,
-                    crisis=(st.session_state.detected_mood.lower() == "suicidal")
-                )
+        nc1, nc3 = st.columns(2)
+        nc2 = None
+
+    with nc1:
+        label = "▶ 🔍 Analyze Text" if a_analyze else "🔍 Analyze Text"
+        if st.button(label, key="tnav_analyze", use_container_width=True,
+                     type="primary" if a_analyze else "secondary"):
+            st.session_state.page = "analyze"
+            st.rerun()
+
+    if nc2 and has_results:
+        with nc2:
+            label = "▶ 📊 Last Results" if a_results else "📊 Last Results"
+            if st.button(label, key="tnav_results", use_container_width=True,
+                         type="primary" if a_results else "secondary"):
+                st.session_state.page = "results"
                 st.rerun()
 
-    st.divider()
-    st.subheader("Model Info 📊")
-    st.caption("Training dataset: 53,000+ samples")
-    st.caption("Categories: 7 mental health classes")
-    st.caption("Model accuracy: 87%")
-    st.caption("Algorithm: TF-IDF + Logistic Regression")
-    st.caption("This Tool is for Detecting Mental Health.")
-    st.caption("For emergencies call **112**")
+    with nc3:
+        label = "▶ 🫧 Mello" if a_mello else "🫧 Mello"
+        if st.button(label, key="tnav_mello", use_container_width=True,
+                     type="primary" if a_mello else "secondary"):
+            if not a_mello:
+                mood = st.session_state.detected_mood or "normal"
+                open_mello(mood, st.session_state.user_text_context,
+                           crisis=(mood == "suicidal"))
+                st.rerun()
+
+    st.write("")
+
+
+render_topbar()
 
 
 # ══════════════════════════════════════════════════════════
@@ -255,51 +573,53 @@ if st.session_state.page == "crisis":
 
     st.markdown("""
     <div class="crisis-banner">
-        <h3 style="margin:0 0 12px 0;">🚨 You are not alone</h3>
-        <p style="margin:0 0 12px 0; opacity:0.9;">
-            Please reach out to a crisis helpline right now.
-            They are available 24/7 and calls are free.
-        </p>
-        <div class="crisis-number">📞 iCall &nbsp;&nbsp; <strong>9152987821</strong></div>
-        <div class="crisis-number">📞 AASRA &nbsp;&nbsp; <strong>91-22-27546669</strong></div>
-        <div class="crisis-number">📞 Vandrevala Foundation &nbsp;&nbsp; <strong>1860-2662-345</strong></div>
-        <div class="crisis-number">📞 Tele MANAS &nbsp;&nbsp; <strong>14416</strong> &nbsp;(free · 24/7)</div>
+        <div style="font-family:'Syne',sans-serif;font-size:1.15rem;
+                    font-weight:800;color:white;margin-bottom:10px;">
+            🚨 You are not alone
+        </div>
+        <div style="color:rgba(255,255,255,0.7);font-size:0.87rem;margin-bottom:14px;">
+            Real humans are available 24/7 — please reach out right now.
+        </div>
+        <div class="crisis-row">📞 iCall &nbsp;&nbsp; <strong>9152987821</strong></div>
+        <div class="crisis-row">📞 AASRA &nbsp;&nbsp; <strong>91-22-27546669</strong></div>
+        <div class="crisis-row">📞 Vandrevala Foundation &nbsp;&nbsp; <strong>1860-2662-345</strong></div>
+        <div class="crisis-row">📞 Tele MANAS &nbsp;&nbsp; <strong>14416</strong> (free · 24/7)</div>
     </div>
     """, unsafe_allow_html=True)
 
-    st.markdown('<div class="chat-container">', unsafe_allow_html=True)
-    for message in st.session_state.messages:
-        with st.chat_message(message["role"]):
-            st.markdown(message["content"])
+    st.markdown("""
+    <div class="mello-header">
+        <div class="m-avatar">🫧</div>
+        <div>
+            <div class="m-name">Mello</div>
+            <div class="m-status">
+                <span class="dot-live"></span>here with you right now
+            </div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    for msg in st.session_state.messages:
+        with st.chat_message(msg["role"]):
+            st.markdown(msg["content"])
 
     if prompt := st.chat_input("You are safe here. Share what's on your mind..."):
         st.session_state.messages.append({"role": "user", "content": prompt})
         with st.chat_message("user"):
             st.markdown(prompt)
-
-        recovery_signals = [
-            "feel better", "feeling better", "i'm okay", "i am okay",
-            "thank you", "thanks", "that helped", "i feel safe",
-            "i called", "i will call", "much better"
-        ]
-        user_recovering = any(s in prompt.lower() for s in recovery_signals)
-
+        recovery   = ["feel better","feeling better","i'm okay","i am okay",
+                      "thank you","that helped","i feel safe","i called","much better"]
+        recovering = any(s in prompt.lower() for s in recovery)
         with st.chat_message("assistant"):
             with st.spinner(""):
-                reply = get_groq_response(
-                    st.session_state.messages,
-                    "suicidal",
-                    st.session_state.user_text_context
-                )
-            if user_recovering:
+                reply = mello_reply(st.session_state.messages, "suicidal",
+                                    st.session_state.user_text_context)
+            if recovering:
                 st.session_state.page = "chat"
-                reply += "\n\n💙 I'm really glad you're feeling a little better. I'm still right here with you."
+                reply += "\n\n💙 I'm so glad you're feeling a little better. Still here."
             st.markdown(reply)
-
         st.session_state.messages.append({"role": "assistant", "content": reply})
         st.rerun()
-
-    st.markdown('</div>', unsafe_allow_html=True)
 
 
 # ══════════════════════════════════════════════════════════
@@ -309,53 +629,49 @@ elif st.session_state.page == "chat":
 
     mood = st.session_state.detected_mood or "normal"
 
-    st.markdown('<div class="chat-container">', unsafe_allow_html=True)
-    st.title("💬 Support Chat")
-    st.caption(f"Chatting with context: **{mood.title()}** mood detected")
-    st.divider()
+    st.markdown(f"""
+    <div class="mello-header">
+        <div class="m-avatar">🫧</div>
+        <div>
+            <div class="m-name">Mello</div>
+            <div class="m-status">
+                <span class="dot-live"></span>
+                talking with you · {mood.title()} context loaded
+            </div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
 
-    for message in st.session_state.messages:
-        with st.chat_message(message["role"]):
-            st.markdown(message["content"])
+    for msg in st.session_state.messages:
+        with st.chat_message(msg["role"]):
+            st.markdown(msg["content"])
 
     if prompt := st.chat_input("Share what's on your mind..."):
         st.session_state.messages.append({"role": "user", "content": prompt})
         with st.chat_message("user"):
             st.markdown(prompt)
-
-        recovery_signals = [
-            "feel better", "feeling better", "i'm okay", "i am okay",
-            "thank you", "that helped", "much better", "i feel good"
-        ]
-        crisis_signals = [
-            "want to die", "end my life", "kill myself",
-            "no point living", "better off dead", "suicide"
-        ]
-
-        user_recovering = any(s in prompt.lower() for s in recovery_signals)
-        user_in_crisis  = any(s in prompt.lower() for s in crisis_signals)
-
-        if user_in_crisis:
+        recovery  = ["feel better","feeling better","i'm okay","i am okay",
+                     "thank you","that helped","much better","i feel good"]
+        crisis_kw = ["want to die","end my life","kill myself",
+                     "no point living","better off dead","suicide"]
+        recovering = any(s in prompt.lower() for s in recovery)
+        in_crisis  = any(s in prompt.lower() for s in crisis_kw)
+        if in_crisis:
             st.session_state.detected_mood = "suicidal"
-            open_chatbot("suicidal", st.session_state.user_text_context, crisis=True)
+            open_mello("suicidal", st.session_state.user_text_context, crisis=True)
             st.rerun()
-
         with st.chat_message("assistant"):
             with st.spinner(""):
-                current_mood = "normal" if user_recovering else mood
-                reply = get_groq_response(
+                reply = mello_reply(
                     st.session_state.messages,
-                    current_mood,
+                    "normal" if recovering else mood,
                     st.session_state.user_text_context
                 )
             st.markdown(reply)
-
         st.session_state.messages.append({"role": "assistant", "content": reply})
-        if user_recovering:
+        if recovering:
             st.session_state.detected_mood = "normal"
         st.rerun()
-
-    st.markdown('</div>', unsafe_allow_html=True)
 
 
 # ══════════════════════════════════════════════════════════
@@ -367,88 +683,124 @@ elif st.session_state.page == "results":
     scores     = st.session_state.scores
     confidence = st.session_state.confidence
 
-    st.title("🔍 Results")
-    st.divider()
-
-    col1, col2, col3 = st.columns(3)
-    col1.metric("Detected Category", prediction.replace("_", " ").title())
-    col2.metric("Confidence",        f"{confidence * 100:.1f}%")
-    col3.metric("Words Analyzed",    len(st.session_state.user_text_context.split()))
-
-    sorted_scores = dict(sorted(scores.items(), key=lambda x: x[1], reverse=True))
-    colors = ["#ef4444" if k == prediction else "#94a3b8" for k in sorted_scores]
-    fig = go.Figure(go.Bar(
-        x=[k.replace("_", " ").title() for k in sorted_scores.keys()],
-        y=[v * 100 for v in sorted_scores.values()],
-        marker_color=colors,
-        text=[f"{v * 100:.1f}%" for v in sorted_scores.values()],
-        textposition="outside"
-    ))
-    fig.update_layout(
-        title="Confidence Scores by Category",
-        yaxis_title="Confidence (%)",
-        yaxis_range=[0, 110],
-        plot_bgcolor="rgba(0,0,0,0)",
-        paper_bgcolor="rgba(0,0,0,0)",
-        font=dict(size=13),
-        margin=dict(t=50, b=20)
-    )
-    st.plotly_chart(fig, use_container_width=True)
-
-    interpretations = {
-        "normal":               ("✅ No significant distress signals detected.",          "success"),
-        "depression":           ("🔴 Signals associated with depression detected.",      "error"),
-        "anxiety":              ("🟠 Signals associated with anxiety detected.",         "warning"),
-        "suicidal":             ("🚨 High risk signals detected. Please seek help now.", "error"),
-        "stress":               ("🟡 Signals associated with stress detected.",          "warning"),
-        "bipolar":              ("🟠 Signals associated with bipolar mood detected.",    "warning"),
-        "personality disorder": ("🔴 Signals of personality disorder detected.",        "error"),
-    }
-    msg, msg_type = interpretations.get(
-        prediction.lower(), (f"Category detected: {prediction.title()}", "info")
-    )
-    if msg_type == "success":
-        st.success(msg)
-    elif msg_type == "error":
-        st.error(msg)
-    elif msg_type == "warning":
-        st.warning(msg)
-    else:
-        st.info(msg)
-
-    st.divider()
     st.markdown("""
-    <div class="suggest-box">
-        <strong>💬 Want to talk about this?</strong><br><br>
-        Our support chatbot has read your text and is ready to listen.
-        It understands what you shared and can help you work through it.
+    <div style="animation:slideUp 0.5s ease-out;text-align:center;padding:16px 0 8px">
+        <div class="hero-title">Your Results</div>
+        <div class="hero-sub">Here is what MindScan detected in your text</div>
+        <div class="hero-bar"></div>
     </div>
     """, unsafe_allow_html=True)
 
     st.write("")
-    col1, col2 = st.columns([2, 1])
-    with col1:
-        if st.button("💬 Open Support Chat", type="primary", use_container_width=True):
-            open_chatbot(
-                st.session_state.detected_mood,
-                st.session_state.user_text_context,
-                crisis=False
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Detected",   prediction.replace("_"," ").title())
+    c2.metric("Confidence", f"{confidence*100:.1f}%")
+    c3.metric("Words",      len(st.session_state.user_text_context.split()))
+
+    if confidence < 0.55:
+        st.warning("⚠️ Low confidence — mixed signals detected. Interpret with caution.")
+
+    st.write("")
+    ss  = dict(sorted(scores.items(), key=lambda x: x[1], reverse=True))
+    fig = go.Figure(go.Bar(
+        x=[k.replace("_"," ").title() for k in ss],
+        y=[v*100 for v in ss.values()],
+        marker=dict(
+            color=["#7c3aed" if k==prediction
+                   else "rgba(255,255,255,0.08)" for k in ss],
+            line=dict(width=0)
+        ),
+        text=[f"{v*100:.1f}%" for v in ss.values()],
+        textposition="outside",
+        textfont=dict(color="rgba(255,255,255,0.5)", size=11)
+    ))
+    fig.update_layout(
+        plot_bgcolor="rgba(0,0,0,0)",
+        paper_bgcolor="rgba(0,0,0,0)",
+        font=dict(color="rgba(255,255,255,0.5)", family="DM Sans", size=11),
+        yaxis=dict(range=[0,120], showgrid=True,
+                   gridcolor="rgba(255,255,255,0.04)",
+                   tickfont=dict(color="rgba(255,255,255,0.25)"), title=""),
+        xaxis=dict(tickfont=dict(color="rgba(255,255,255,0.45)")),
+        margin=dict(t=16, b=8, l=0, r=0),
+        height=260,
+    )
+    st.plotly_chart(fig, use_container_width=True)
+
+    # Word signals
+    try:
+        vec  = model.named_steps["tfidf"]
+        clf  = model.named_steps["clf"]
+        ci   = list(clf.classes_).index(prediction)
+        coef = clf.coef_[ci]
+        tv   = vec.transform([st.session_state.user_text_context])
+        fn   = vec.get_feature_names_out()
+        nz   = tv.nonzero()[1]
+        ws   = sorted([(fn[i], float(coef[i]*tv[0,i])) for i in nz],
+                      key=lambda x: abs(x[1]), reverse=True)[:8]
+        if ws:
+            st.markdown(
+                '<div class="section-label" style="margin-top:16px">Key signals detected</div>',
+                unsafe_allow_html=True
             )
+            pills = "".join(
+                f'<span class="pill-red">{w}</span>'
+                if s > 0 else f'<span class="pill-green">{w}</span>'
+                for w, s in ws
+            )
+            st.markdown(f'<div style="animation:slideUp 0.5s ease-out">{pills}</div>',
+                        unsafe_allow_html=True)
+            st.caption("Red → drove this prediction · Green → worked against it")
+    except Exception:
+        pass
+
+    st.write("")
+    interp = {
+        "normal":               ("✅ No significant distress signals detected.",          "success"),
+        "depression":           ("🔴 Signals associated with depression detected.",      "error"),
+        "anxiety":              ("🟠 Signals associated with anxiety detected.",         "warning"),
+        "suicidal":             ("🚨 High risk signals detected. Please seek help now.", "error"),
+        "stress":               ("🟡 Stress signals detected.",                          "warning"),
+        "bipolar":              ("🟠 Bipolar mood signals detected.",                    "warning"),
+        "personality disorder": ("🔴 Personality disorder signals detected.",           "error"),
+    }
+    msg, mt = interp.get(prediction.lower(),
+                         (f"Detected: {prediction.title()}", "info"))
+    if mt == "success":   st.success(msg)
+    elif mt == "error":   st.error(msg)
+    elif mt == "warning": st.warning(msg)
+    else:                 st.info(msg)
+
+    st.write("")
+    st.markdown("""
+    <div class="suggest-box">
+        <div style="font-family:'Syne',sans-serif;font-weight:700;
+                    font-size:1rem;color:white;">
+            🫧 Want to talk to Mello?
+        </div>
+        <div style="color:rgba(255,255,255,0.5);font-size:0.87rem;margin-top:6px;">
+            Mello has already read your text and is ready to listen.
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    st.write("")
+    c1, c2 = st.columns([2,1])
+    with c1:
+        if st.button("🫧 Talk to Mello", type="primary", use_container_width=True):
+            open_mello(prediction, st.session_state.user_text_context, crisis=False)
             st.rerun()
-    with col2:
-        if st.button("🔍 Analyze New Text", use_container_width=True):
+    with c2:
+        if st.button("🔍 New Scan", use_container_width=True):
             st.session_state.page = "analyze"
             st.rerun()
 
-    if prediction.lower() in ["depression", "bipolar"]:
+    if prediction.lower() in ["depression","bipolar","suicidal"]:
         st.divider()
-        st.subheader("📞 Crisis Resources")
-        st.info("""
-        **iCall:** 9152987821
-        **AASRA:** 91-22-27546669
-        **Vandrevala Foundation:** 1860-2662-345 *(24/7)*
-        **Tele MANAS:** 14416 *(free · 24/7)*
-        """)
+        st.markdown('<div class="section-label">Crisis resources</div>',
+                    unsafe_allow_html=True)
+        st.info("**iCall:** 9152987821 · **AASRA:** 91-22-27546669 · "
+                "**Tele MANAS:** 14416 *(free 24/7)*")
 
 
 # ══════════════════════════════════════════════════════════
@@ -456,70 +808,89 @@ elif st.session_state.page == "results":
 # ══════════════════════════════════════════════════════════
 else:
 
-    st.title("🔍 Mental Health Detection from Text")
-    st.caption("NLP-powered tool to identify emotional distress signals in written text.")
-    st.warning("A Tool for detecting mental health of a person by analyzing their text.")
-    st.divider()
+    st.markdown("""
+    <div style="animation:slideUp 0.6s ease-out;text-align:center;padding:20px 0 8px">
+        <div class="hero-title">MindScan</div>
+        <div class="hero-sub">
+            Detect emotional distress signals in text · NLP + AI
+        </div>
+        <div class="hero-bar"></div>
+    </div>
+    """, unsafe_allow_html=True)
 
-    st.subheader("Try an example")
-    col1, col2, col3 = st.columns(3)
-    examples = {
+    st.write("")
+    st.warning("A Tool for detecting mental health of a person by analyzing their text.")
+    st.write("")
+
+    st.markdown('<div class="section-label">Try an example</div>',
+                unsafe_allow_html=True)
+    c1, c2, c3 = st.columns(3)
+    ex = {
         "😔 Depression": "I have been feeling completely empty for weeks. Nothing brings me joy anymore and I struggle to get out of bed every morning.",
         "😰 Anxiety":    "I cannot stop worrying about everything. My heart races constantly and I feel like something terrible is about to happen.",
-        "😊 Normal":     "Had a great day today! Went for a walk, cooked a nice meal and caught up with some old friends. Feeling grateful."
+        "😊 Normal":     "Had a great day today! Went for a walk, cooked a nice meal and caught up with some old friends. Feeling grateful.",
     }
-    if col1.button("😔 Depression", use_container_width=True):
-        st.session_state.text_input = examples["😔 Depression"]
+    if c1.button("😔 Depression", use_container_width=True):
+        st.session_state.text_input = ex["😔 Depression"]
         st.rerun()
-    if col2.button("😰 Anxiety", use_container_width=True):
-        st.session_state.text_input = examples["😰 Anxiety"]
+    if c2.button("😰 Anxiety", use_container_width=True):
+        st.session_state.text_input = ex["😰 Anxiety"]
         st.rerun()
-    if col3.button("😊 Normal", use_container_width=True):
-        st.session_state.text_input = examples["😊 Normal"]
+    if c3.button("😊 Normal", use_container_width=True):
+        st.session_state.text_input = ex["😊 Normal"]
         st.rerun()
 
-    st.divider()
-    st.subheader("Or enter your own text")
+    st.write("")
+    st.markdown('<div class="section-label">Or write your own</div>',
+                unsafe_allow_html=True)
     text_input = st.text_area(
         label="",
         height=160,
         value=st.session_state.get("text_input", ""),
-        placeholder="e.g. I have been feeling overwhelmed lately..."
+        placeholder="How have you been feeling lately? Write freely — this is a safe space...",
     )
 
-    if st.button("Analyze Text", type="primary", use_container_width=True):
-
+    st.write("")
+    if st.button("✦ Analyze Text", type="primary", use_container_width=True):
         if not text_input.strip():
             st.error("Please enter some text first.")
             st.stop()
-
-        with st.spinner("Analyzing..."):
-            prediction    = model.predict([text_input])[0]
-            probabilities = model.predict_proba([text_input])[0]
-            labels        = model.classes_
-            scores        = {
-                label: round(float(prob), 4)
-                for label, prob in zip(labels, probabilities)
-            }
-            confidence = round(float(max(probabilities)), 4)
-
-        # Save to session state
-        st.session_state.detected_mood     = prediction
+        with st.spinner("Scanning for signals..."):
+            pred  = model.predict([text_input])[0]
+            proba = model.predict_proba([text_input])[0]
+            lbls  = model.classes_
+            sc    = {l: round(float(p),4) for l,p in zip(lbls,proba)}
+            conf  = round(float(max(proba)),4)
+        st.session_state.detected_mood     = pred
         st.session_state.user_text_context = text_input
-        st.session_state.scores            = scores
-        st.session_state.confidence        = confidence
-
-        # Auto open crisis chat for suicidal
-        if prediction.lower() == "suicidal":
-            with st.spinner("Connecting you to support..."):
+        st.session_state.scores            = sc
+        st.session_state.confidence        = conf
+        st.session_state.total_scans      += 1
+        st.session_state.mood_history.append(pred)
+        if pred.lower() == "suicidal":
+            with st.spinner("Connecting you to Mello..."):
                 time.sleep(1.2)
-            open_chatbot("suicidal", text_input, crisis=True)
-            st.rerun()
-
-        # Go to results page for everything else
+            open_mello("suicidal", text_input, crisis=True)
         else:
             st.session_state.page = "results"
-            st.rerun()
+        st.rerun()
 
-    st.divider()
-    st.caption("Built with Python · scikit-learn · Groq AI · Streamlit | For educational purposes only.")
+    st.write("")
+
+    # Stats row
+    if st.session_state.total_scans > 0:
+        st.divider()
+        st.markdown('<div class="section-label">Session</div>', unsafe_allow_html=True)
+        s1, s2, s3 = st.columns(3)
+        s1.metric("Scans done", st.session_state.total_scans)
+        if st.session_state.detected_mood:
+            s2.metric("Last result", st.session_state.detected_mood.title())
+        s3.metric("Confidence", f"{st.session_state.confidence*100:.0f}%"
+                  if st.session_state.confidence else "—")
+
+    st.markdown(
+        '<div class="footer-txt" style="margin-top:28px">'
+        'Built with Python · Scikit-learn · Groq · Streamlit'
+        '</div>',
+        unsafe_allow_html=True
+    )
