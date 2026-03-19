@@ -2,7 +2,7 @@ import streamlit as st
 import plotly.graph_objects as go
 import joblib
 import os
-import anthropic
+import google.generativeai as genai
 from dotenv import load_dotenv
 import time
 
@@ -18,7 +18,6 @@ st.set_page_config(
 # ── Custom CSS ─────────────────────────────────────────────
 st.markdown("""
 <style>
-    /* Smooth slide-in animation for chatbot */
     @keyframes slideIn {
         from { opacity: 0; transform: translateY(30px); }
         to   { opacity: 1; transform: translateY(0px);  }
@@ -47,9 +46,9 @@ st.markdown("""
         font-size: 16px;
         font-weight: 500;
     }
-    .mood-badge-crisis   { background:#fee2e2; color:#991b1b; padding:4px 12px; border-radius:20px; font-size:13px; font-weight:500; }
-    .mood-badge-warning  { background:#fef3c7; color:#92400e; padding:4px 12px; border-radius:20px; font-size:13px; font-weight:500; }
-    .mood-badge-normal   { background:#d1fae5; color:#065f46; padding:4px 12px; border-radius:20px; font-size:13px; font-weight:500; }
+    .mood-badge-crisis  { background:#fee2e2; color:#991b1b; padding:4px 12px; border-radius:20px; font-size:13px; font-weight:500; }
+    .mood-badge-warning { background:#fef3c7; color:#92400e; padding:4px 12px; border-radius:20px; font-size:13px; font-weight:500; }
+    .mood-badge-normal  { background:#d1fae5; color:#065f46; padding:4px 12px; border-radius:20px; font-size:13px; font-weight:500; }
     .suggest-box {
         animation: slideIn 0.5s ease-out;
         border-left: 4px solid #6366f1;
@@ -71,52 +70,50 @@ def load_model():
 
 model = load_model()
 
-# ── Anthropic client ───────────────────────────────────────
+# ── Gemini client ──────────────────────────────────────────
 @st.cache_resource
-def load_client():
-    api_key = os.getenv("ANTHROPIC_API_KEY") or st.secrets.get("ANTHROPIC_API_KEY", None)
+def load_gemini():
+    api_key = os.getenv("GEMINI_API_KEY") or st.secrets.get("GEMINI_API_KEY", None)
     if not api_key:
         return None
-    return anthropic.Anthropic(api_key=api_key)
+    genai.configure(api_key=api_key)
+    return genai.GenerativeModel("gemini-1.5-flash")
 
-client = load_client()
+gemini_model = load_gemini()
 
 # ── Session state defaults ─────────────────────────────────
-if "chatbot_open"       not in st.session_state:
-    st.session_state.chatbot_open       = False
-if "messages"           not in st.session_state:
-    st.session_state.messages           = []
-if "detected_mood"      not in st.session_state:
-    st.session_state.detected_mood      = None
-if "user_text_context"  not in st.session_state:
-    st.session_state.user_text_context  = ""
-if "crisis_mode"        not in st.session_state:
-    st.session_state.crisis_mode        = False
-if "crisis_prompt_done" not in st.session_state:
-    st.session_state.crisis_prompt_done = False
-if "text_input"         not in st.session_state:
-    st.session_state.text_input         = ""
+for key, default in {
+    "chatbot_open":       False,
+    "messages":           [],
+    "detected_mood":      None,
+    "user_text_context":  "",
+    "crisis_mode":        False,
+    "text_input":         "",
+}.items():
+    if key not in st.session_state:
+        st.session_state[key] = default
 
-# ── Helper — build system prompt based on mood ────────────
+# ── Build system prompt ────────────────────────────────────
 def build_system_prompt(mood: str, user_context: str) -> str:
 
     context_line = (
-        f"The user previously shared this text which was analyzed and detected as '{mood}':\n"
+        f"The user previously wrote this text which was analyzed and detected as '{mood}':\n"
         f"\"{user_context}\"\n\n"
-        f"Use this as context to understand what they might be going through. "
-        f"Reference it naturally if relevant — don't just repeat it back to them.\n\n"
+        f"Use this as context to understand what they are going through. "
+        f"Reference it naturally — don't just repeat it back word for word.\n\n"
         if user_context else ""
     )
 
-    base = f"""{context_line}You are a warm, empathetic mental health support companion named Mitra.
+    base = f"""{context_line}You are Mitra, a warm and empathetic mental health support companion.
 Your personality: calm, patient, non-judgmental, gently encouraging.
-You speak like a caring friend — not a robot, not a therapist.
-Use simple conversational language. Short paragraphs. No bullet points unless listing coping steps.
-Never diagnose. Never prescribe. Always remind gently that professional help is available.
+Speak like a caring friend — not a robot or a clinical therapist.
+Use simple conversational language. Keep responses concise and warm.
+Short paragraphs only. No bullet points unless listing coping steps.
+Never diagnose. Never prescribe. Always remind gently that professional help exists.
 
-If the user expresses worsening suicidal thoughts at any point, immediately share:
+If at any point the user expresses suicidal thoughts or self harm urges, share these immediately:
 - iCall: 9152987821
-- AASRA: 91-22-27546669  
+- AASRA: 91-22-27546669
 - Vandrevala Foundation: 1860-2662-345
 - Tele MANAS: 14416
 And strongly encourage them to call right now.
@@ -124,82 +121,108 @@ And strongly encourage them to call right now.
 
     mood_instructions = {
         "normal": """
-The user seems to be doing okay but reached out anyway — that takes courage.
-Be warm and welcoming. Ask open-ended questions about their day or what's on their mind.
-Help them reflect on what's going well and what could be better.
-Suggest simple positive habits if relevant: journaling, gratitude, walks.
+The user seems okay but came to chat — acknowledge that and be welcoming.
+Ask open-ended questions about their day or what is on their mind.
+Help them reflect on what is going well. Suggest positive habits if relevant.
 """,
         "depression": """
-The user is showing signs of depression. They may feel empty, hopeless or disconnected.
-Validate their feelings first — never rush to fix or advise.
+The user is showing signs of depression — they may feel empty, hopeless or disconnected.
+Validate their feelings first before anything else. Never rush to fix or advise.
 Use phrases like 'that sounds really heavy' or 'it makes sense you feel that way'.
-Gently explore: how long have they felt this way, do they have support around them.
+Gently explore how long they have felt this way and whether they have support around them.
 Suggest small achievable steps: getting sunlight, one small task, texting a friend.
-Remind them depression is not a character flaw — it is something many people face and recover from.
+Remind them depression is not a character flaw — many people face and recover from it.
 """,
         "anxiety": """
-The user is experiencing anxiety. They may feel overwhelmed, restless or fearful.
+The user is experiencing anxiety — they may feel overwhelmed, restless or fearful.
 Acknowledge how exhausting anxiety can be. Normalize it without minimizing it.
 Offer a simple grounding technique early: the 5-4-3-2-1 method or box breathing.
 Ask what specifically is worrying them most right now.
-Help them separate what is in their control from what isn't.
+Help them separate what is in their control from what is not.
 """,
         "stress": """
-The user is stressed — likely from external pressures like work, college or relationships.
-Empathize with how overwhelming it can feel when everything piles up.
+The user is stressed — likely from work, college or relationship pressures.
+Empathize with how overwhelming it feels when everything piles up at once.
 Ask what is causing the most stress right now.
-Help them prioritize and break things into smaller steps.
+Help them prioritize and break things into smaller manageable steps.
 Suggest a short break, physical movement or talking to someone they trust.
 """,
         "suicidal": """
-CRITICAL: This user is in crisis. They may be thinking about ending their life.
-Your ONLY priority right now is their safety.
-Be extremely gentle, present and non-judgmental.
-Do NOT give advice or try to problem-solve. Just be with them.
-Start by saying you are glad they are here and talking.
+CRITICAL — this user is in crisis. They may be thinking about ending their life.
+Your only priority right now is their safety. Be extremely gentle and present.
+Do NOT give advice or try to problem-solve. Just be with them in this moment.
+Start by saying you are glad they are here and talking to you right now.
 Ask if they are safe right now.
 Gently but firmly encourage them to call a helpline immediately.
-Repeat the numbers if they don't respond to the first prompt.
-If they say they won't call, ask if there is one person nearby they can be with right now.
-Every response must end with a crisis number until they confirm they are safe.
+Repeat the numbers if they do not respond to the first prompt.
+If they say they will not call, ask if there is one person nearby they can be with.
+Every single response must end with a crisis number until they confirm they are safe.
 """,
         "bipolar": """
-The user may be experiencing mood swings associated with bipolar patterns.
-Be steady and calm in your tone — an anchor for them.
+The user may be experiencing mood swings. Be steady and calm — an anchor for them.
 Ask how they are feeling right now in this moment.
 Avoid making assumptions about their current phase.
-Gently encourage them to stay connected with any mental health professional they may have.
+Gently encourage them to stay connected with any mental health professional they have.
 """,
     }
 
-    mood_key     = mood.lower().replace(" ", "_").replace("personality_disorder", "depression")
+    mood_key     = mood.lower()
     mood_section = mood_instructions.get(mood_key, mood_instructions["normal"])
-
     return base + mood_section
 
 
-# ── Helper — get Claude response ───────────────────────────
-def get_claude_response(messages: list, mood: str, user_context: str) -> str:
-    if client is None:
-        return "I'm having trouble connecting right now. Please try again in a moment."
+# ── Get Gemini response ────────────────────────────────────
+def get_gemini_response(messages: list, mood: str, user_context: str) -> str:
+    if gemini_model is None:
+        return (
+            "I'm having trouble connecting right now. 💙\n\n"
+            "If you need support please reach out to:\n\n"
+            "📞 **iCall:** 9152987821\n"
+            "📞 **Tele MANAS:** 14416 *(free · 24/7)*"
+        )
 
-    system = build_system_prompt(mood, user_context)
-    api_messages = [
-        {"role": m["role"], "content": m["content"]}
-        for m in messages
-        if m["role"] in ["user", "assistant"]
-    ]
+    try:
+        system_prompt = build_system_prompt(mood, user_context)
 
-    response = client.messages.create(
-        model="claude-opus-4-5",
-        max_tokens=1024,
-        system=system,
-        messages=api_messages
-    )
-    return response.content[0].text
+        # Build conversation history for Gemini
+        # Gemini uses 'user' and 'model' roles (not 'assistant')
+        history = []
+        for m in messages[:-1]:  # all except last message
+            role = "model" if m["role"] == "assistant" else "user"
+            history.append({
+                "role": role,
+                "parts": [m["content"]]
+            })
+
+        # Start chat with history
+        chat = gemini_model.start_chat(history=history)
+
+        # Last message is the current user input
+        # Prepend system prompt to very first message only
+        last_message = messages[-1]["content"] if messages else ""
+
+        if len(history) == 0:
+            # First message — inject system context
+            full_prompt = f"{system_prompt}\n\nUser: {last_message}"
+        else:
+            full_prompt = last_message
+
+        response = chat.send_message(full_prompt)
+        return response.text
+
+    except Exception as e:
+        error_msg = str(e).lower()
+        if "quota" in error_msg or "rate" in error_msg:
+            return (
+                "I'm a little overwhelmed right now and need a moment. "
+                "Please try again in a few seconds. 💙"
+            )
+        if "api key" in error_msg or "invalid" in error_msg:
+            return "There's a configuration issue. Please check the API key."
+        return "Something went wrong on my end. Please try again. 💙"
 
 
-# ── Helper — open chatbot with first message ───────────────
+# ── Open chatbot with opening message ─────────────────────
 def open_chatbot(mood: str, user_context: str, crisis: bool = False):
     st.session_state.chatbot_open      = True
     st.session_state.detected_mood     = mood
@@ -211,28 +234,29 @@ def open_chatbot(mood: str, user_context: str, crisis: bool = False):
         opening = (
             "I'm really glad you're here right now. 💙\n\n"
             "I can see you might be going through something very painful. "
-            "You don't have to face this alone.\n\n"
+            "You don't have to face this alone — I'm right here with you.\n\n"
             "Before anything else — are you safe right now?\n\n"
-            "Please know that help is just a call away:\n"
+            "Please know that help is just a call away:\n\n"
             "📞 **iCall:** 9152987821\n"
             "📞 **AASRA:** 91-22-27546669\n"
             "📞 **Vandrevala Foundation:** 1860-2662-345 *(24/7)*\n"
-            "📞 **Tele MANAS:** 14416 *(free, 24/7)*\n\n"
-            "I'm here with you. Take your time."
+            "📞 **Tele MANAS:** 14416 *(free · 24/7)*\n\n"
+            "I'm here. Take your time. You don't have to say anything perfect."
         )
     else:
-        # Generate a context-aware opening using Claude
-        seed_messages = [{
+        # Generate context-aware opening using Gemini
+        seed = [{
             "role": "user",
             "content": (
-                f"I just finished analyzing my text and it was detected as '{mood}'. "
+                f"My text was analyzed and detected as '{mood}'. "
                 f"The text I wrote was: \"{user_context}\". "
-                f"Please greet me warmly and acknowledge what I shared."
+                f"Please greet me warmly, briefly acknowledge what I shared "
+                f"and ask one gentle open question to help me open up."
                 if user_context
-                else f"I just came to chat. My mood seems to be '{mood}'."
+                else f"I just came to chat. Please greet me warmly."
             )
         }]
-        opening = get_claude_response(seed_messages, mood, user_context)
+        opening = get_gemini_response(seed, mood, user_context)
 
     st.session_state.messages.append({
         "role":    "assistant",
@@ -263,16 +287,16 @@ with st.sidebar:
             st.session_state.chatbot_open = False
             st.rerun()
         if st.button("🗑️ Clear Chat", use_container_width=True):
-            mood    = st.session_state.detected_mood or "normal"
-            context = st.session_state.user_text_context
-            crisis  = st.session_state.crisis_mode
-            open_chatbot(mood, context, crisis)
+            open_chatbot(
+                st.session_state.detected_mood or "normal",
+                st.session_state.user_text_context,
+                st.session_state.crisis_mode
+            )
             st.rerun()
     else:
         if st.button("💬 Open Support Chat", use_container_width=True):
-            mood    = st.session_state.detected_mood or "normal"
-            context = st.session_state.user_text_context
-            open_chatbot(mood, context, mood == "suicidal")
+            mood = st.session_state.detected_mood or "normal"
+            open_chatbot(mood, st.session_state.user_text_context, mood == "suicidal")
             st.rerun()
 
     st.divider()
@@ -281,23 +305,24 @@ with st.sidebar:
 
 
 # ══════════════════════════════════════════════════════════
-# CRISIS MODE — auto open, full screen
+# CRISIS MODE
 # ══════════════════════════════════════════════════════════
 if st.session_state.crisis_mode and st.session_state.chatbot_open:
 
-    # Crisis banner
     st.markdown("""
     <div class="crisis-banner">
         <h3 style="margin:0 0 12px 0;">🚨 You are not alone</h3>
-        <p style="margin:0 0 12px 0; opacity:0.9;">Please reach out to a crisis helpline right now. They are available 24/7 and calls are free.</p>
+        <p style="margin:0 0 12px 0; opacity:0.9;">
+            Please reach out to a crisis helpline right now.
+            They are available 24/7 and calls are free.
+        </p>
         <div class="crisis-number">📞 iCall &nbsp;&nbsp; <strong>9152987821</strong></div>
         <div class="crisis-number">📞 AASRA &nbsp;&nbsp; <strong>91-22-27546669</strong></div>
         <div class="crisis-number">📞 Vandrevala Foundation &nbsp;&nbsp; <strong>1860-2662-345</strong></div>
-        <div class="crisis-number">📞 Tele MANAS &nbsp;&nbsp; <strong>14416</strong> &nbsp; (free · 24/7)</div>
+        <div class="crisis-number">📞 Tele MANAS &nbsp;&nbsp; <strong>14416</strong> &nbsp;(free · 24/7)</div>
     </div>
     """, unsafe_allow_html=True)
 
-    # Chat window
     st.markdown('<div class="chat-container">', unsafe_allow_html=True)
 
     for message in st.session_state.messages:
@@ -309,30 +334,26 @@ if st.session_state.crisis_mode and st.session_state.chatbot_open:
         with st.chat_message("user"):
             st.markdown(prompt)
 
-        # Check if user seems to be recovering
         recovery_signals = [
             "feel better", "feeling better", "i'm okay", "i am okay",
             "thank you", "thanks", "that helped", "i feel safe",
-            "i called", "i will call", "okay i will"
+            "i called", "i will call", "okay i will", "much better"
         ]
         user_recovering = any(s in prompt.lower() for s in recovery_signals)
 
         with st.chat_message("assistant"):
             with st.spinner(""):
-                reply = get_claude_response(
+                reply = get_gemini_response(
                     st.session_state.messages,
                     "suicidal",
                     st.session_state.user_text_context
                 )
-
-            # If user seems better, soften crisis mode gently
             if user_recovering:
                 st.session_state.crisis_mode = False
                 reply += (
-                    "\n\n💙 I'm really glad you're feeling a bit better. "
-                    "I'm still here with you — take all the time you need."
+                    "\n\n💙 I'm really glad you're feeling a little better. "
+                    "I'm still right here with you — take all the time you need."
                 )
-
             st.markdown(reply)
 
         st.session_state.messages.append({"role": "assistant", "content": reply})
@@ -342,7 +363,7 @@ if st.session_state.crisis_mode and st.session_state.chatbot_open:
 
 
 # ══════════════════════════════════════════════════════════
-# CHATBOT PAGE — non-crisis
+# CHATBOT — non crisis
 # ══════════════════════════════════════════════════════════
 elif st.session_state.chatbot_open:
 
@@ -362,7 +383,6 @@ elif st.session_state.chatbot_open:
         with st.chat_message("user"):
             st.markdown(prompt)
 
-        # Check for recovery or worsening
         recovery_signals = [
             "feel better", "feeling better", "i'm okay", "i am okay",
             "thank you", "that helped", "much better", "i feel good"
@@ -375,7 +395,6 @@ elif st.session_state.chatbot_open:
         user_recovering = any(s in prompt.lower() for s in recovery_signals)
         user_in_crisis  = any(s in prompt.lower() for s in crisis_signals)
 
-        # Escalate to crisis if needed
         if user_in_crisis:
             st.session_state.crisis_mode   = True
             st.session_state.detected_mood = "suicidal"
@@ -384,7 +403,7 @@ elif st.session_state.chatbot_open:
         with st.chat_message("assistant"):
             with st.spinner(""):
                 current_mood = "normal" if user_recovering else mood
-                reply = get_claude_response(
+                reply = get_gemini_response(
                     st.session_state.messages,
                     current_mood,
                     st.session_state.user_text_context
@@ -411,7 +430,6 @@ else:
     st.warning("⚠️ For educational and research purposes only. Not a clinical tool.")
     st.divider()
 
-    # ── Example buttons ────────────────────────────────────
     st.subheader("Try an example")
     col1, col2, col3 = st.columns(3)
 
@@ -433,7 +451,6 @@ else:
 
     st.divider()
 
-    # ── Text input ─────────────────────────────────────────
     st.subheader("Or enter your own text")
     text_input = st.text_area(
         label="",
@@ -458,7 +475,6 @@ else:
             }
             confidence = round(float(max(probabilities)), 4)
 
-        # Store for chatbot context
         st.session_state.detected_mood     = prediction
         st.session_state.user_text_context = text_input
 
@@ -470,7 +486,6 @@ else:
         col2.metric("Confidence",        f"{confidence * 100:.1f}%")
         col3.metric("Words Analyzed",    len(text_input.split()))
 
-        # ── Bar chart ──────────────────────────────────────
         sorted_scores = dict(
             sorted(scores.items(), key=lambda x: x[1], reverse=True)
         )
@@ -496,18 +511,17 @@ else:
         )
         st.plotly_chart(fig, use_container_width=True)
 
-        # ── Interpretation ─────────────────────────────────
         st.subheader("Interpretation")
         interpretations = {
-            "normal":               ("✅ No significant distress signals detected.",             "success"),
-            "depression":           ("🔴 Signals associated with depression detected.",         "error"),
-            "anxiety":              ("🟠 Signals associated with anxiety detected.",            "warning"),
-            "suicidal":             ("🚨 High risk signals detected. Please seek help now.",    "error"),
-            "stress":               ("🟡 Signals associated with stress detected.",             "warning"),
-            "bipolar":              ("🟠 Signals associated with bipolar mood detected.",       "warning"),
-            "personality disorder": ("🔴 Signals of personality disorder detected.",           "error"),
+            "normal":               ("✅ No significant distress signals detected.",          "success"),
+            "depression":           ("🔴 Signals associated with depression detected.",      "error"),
+            "anxiety":              ("🟠 Signals associated with anxiety detected.",         "warning"),
+            "suicidal":             ("🚨 High risk signals detected. Please seek help now.", "error"),
+            "stress":               ("🟡 Signals associated with stress detected.",          "warning"),
+            "bipolar":              ("🟠 Signals associated with bipolar mood detected.",    "warning"),
+            "personality disorder": ("🔴 Signals of personality disorder detected.",        "error"),
         }
-        label_key        = prediction.lower()
+        label_key         = prediction.lower()
         message, msg_type = interpretations.get(
             label_key, (f"Category detected: {prediction.title()}", "info")
         )
@@ -520,10 +534,10 @@ else:
         else:
             st.info(message)
 
-        # ── Suicidal → auto open chatbot ───────────────────
+        # ── Suicidal → auto open crisis chatbot ────────────
         if prediction.lower() == "suicidal":
             st.divider()
-            with st.spinner("Opening support chat..."):
+            with st.spinner("Connecting you to support..."):
                 time.sleep(1.2)
             open_chatbot("suicidal", text_input, crisis=True)
             st.rerun()
@@ -533,7 +547,7 @@ else:
             st.divider()
             st.markdown("""
             <div class="suggest-box">
-                <strong>💬 Want to talk about this?</strong><br>
+                <strong>💬 Want to talk about this?</strong><br><br>
                 Our support chatbot has read your text and is ready to listen.
                 It understands what you shared and can help you work through it.
             </div>
@@ -542,19 +556,14 @@ else:
             st.write("")
             col1, col2 = st.columns([2, 1])
             with col1:
-                if st.button(
-                    "💬 Open Support Chat",
-                    type="primary",
-                    use_container_width=True
-                ):
+                if st.button("💬 Open Support Chat", type="primary", use_container_width=True):
                     open_chatbot(prediction, text_input, crisis=False)
                     st.rerun()
             with col2:
                 if st.button("Maybe later", use_container_width=True):
                     st.info("That's okay. The chat is always available in the sidebar whenever you're ready. 💙")
 
-            # Crisis resources for depression
-            if prediction.lower() in ["depression", "suicidal"]:
+            if prediction.lower() in ["depression", "bipolar"]:
                 st.divider()
                 st.subheader("📞 Crisis Resources")
                 st.info("""
@@ -565,4 +574,4 @@ else:
                 """)
 
     st.divider()
-    st.caption("Built with Python · scikit-learn · Claude AI · Streamlit | For educational purposes only.")
+    st.caption("Built with Python · scikit-learn · Gemini AI · Streamlit | For educational purposes only.")
