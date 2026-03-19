@@ -8,14 +8,12 @@ import time
 
 load_dotenv()
 
-# ── Page config ────────────────────────────────────────────
 st.set_page_config(
     page_title="Mental Health Detector",
     page_icon="🧠",
     layout="centered"
 )
 
-# ── Custom CSS ─────────────────────────────────────────────
 st.markdown("""
 <style>
     @keyframes slideIn {
@@ -53,6 +51,7 @@ st.markdown("""
         padding: 16px;
         border-radius: 8px;
         margin-top: 16px;
+        background: rgba(99,102,241,0.05);
     }
 </style>
 """, unsafe_allow_html=True)
@@ -78,15 +77,20 @@ def load_groq():
 
 groq_client = load_groq()
 
-# ── Session state defaults ─────────────────────────────────
+# ── Session state ──────────────────────────────────────────
+# page controls which screen is shown:
+# "analyze"  → main analysis form
+# "results"  → results + suggest chatbot button
+# "chat"     → chatbot
+# "crisis"   → crisis chatbot
 for key, default in {
-    "chatbot_open":      False,
+    "page":              "analyze",
     "messages":          [],
     "detected_mood":     None,
     "user_text_context": "",
-    "crisis_mode":       False,
     "text_input":        "",
-    "just_analyzed":     False,
+    "scores":            {},
+    "confidence":        0.0,
 }.items():
     if key not in st.session_state:
         st.session_state[key] = default
@@ -107,7 +111,6 @@ def build_system_prompt(mood: str, user_context: str) -> str:
     }
     mood_key     = mood.lower()
     mood_section = mood_instructions.get(mood_key, mood_instructions["normal"])
-
     return f"""You are Mitra, a warm empathetic mental health support companion.
 Be like a caring friend — calm, patient, non-judgmental.
 Short conversational responses only. Never diagnose or prescribe.
@@ -118,13 +121,11 @@ Instruction: {mood_section}
 If user mentions self harm or suicide always share:
 iCall: 9152987821 | AASRA: 91-22-27546669 | Tele MANAS: 14416"""
 
-
 # ── Get Groq response ──────────────────────────────────────
 def get_groq_response(messages: list, mood: str, user_context: str) -> str:
     if groq_client is None:
         return (
             "I'm having trouble connecting right now. 💙\n\n"
-            "If you need support please reach out to:\n\n"
             "📞 **iCall:** 9152987821\n"
             "📞 **Tele MANAS:** 14416 *(free · 24/7)*"
         )
@@ -133,10 +134,7 @@ def get_groq_response(messages: list, mood: str, user_context: str) -> str:
         api_messages  = [{"role": "system", "content": system_prompt}]
         for m in messages:
             if m["role"] in ["user", "assistant"]:
-                api_messages.append({
-                    "role":    m["role"],
-                    "content": m["content"]
-                })
+                api_messages.append({"role": m["role"], "content": m["content"]})
         response = groq_client.chat.completions.create(
             model="llama-3.1-8b-instant",
             messages=api_messages,
@@ -144,36 +142,26 @@ def get_groq_response(messages: list, mood: str, user_context: str) -> str:
             temperature=0.7,
         )
         return response.choices[0].message.content
-
     except Exception as e:
         print(f"DEBUG Groq error: {e}")
         error_msg = str(e).lower()
         if "quota" in error_msg or "429" in error_msg or "rate" in error_msg:
-            return (
-                "I need a short breather — please wait a moment and try again. 💙\n\n"
-                "📞 **iCall:** 9152987821\n"
-                "📞 **Tele MANAS:** 14416 *(free · 24/7)*"
-            )
+            return "I need a short breather — please wait a moment and try again. 💙\n\n📞 **iCall:** 9152987821"
         if "api key" in error_msg or "invalid" in error_msg or "401" in error_msg:
             return "There's a configuration issue. Please check the API key."
         return "Something went wrong on my end. Please try again. 💙"
 
-
-# ── Open chatbot with opening message ─────────────────────
+# ── Open chatbot ───────────────────────────────────────────
 def open_chatbot(mood: str, user_context: str, crisis: bool = False):
-    st.session_state.chatbot_open      = True
-    st.session_state.detected_mood     = mood
-    st.session_state.user_text_context = user_context
-    st.session_state.crisis_mode       = crisis
-    st.session_state.messages          = []
+    st.session_state.messages = []
+    st.session_state.page     = "crisis" if crisis else "chat"
 
     if crisis:
         opening = (
             "I'm really glad you're here right now. 💙\n\n"
             "I can see you might be going through something very painful. "
-            "You don't have to face this alone — I'm right here with you.\n\n"
+            "You don't have to face this alone.\n\n"
             "Before anything else — are you safe right now?\n\n"
-            "Please know that help is just a call away:\n\n"
             "📞 **iCall:** 9152987821\n"
             "📞 **AASRA:** 91-22-27546669\n"
             "📞 **Vandrevala Foundation:** 1860-2662-345 *(24/7)*\n"
@@ -182,23 +170,20 @@ def open_chatbot(mood: str, user_context: str, crisis: bool = False):
         )
     else:
         seed = [{
-            "role":    "user",
+            "role": "user",
             "content": (
-                f"The user wrote this text and it was detected as '{mood}':\n"
+                f"The user wrote this text detected as '{mood}':\n"
                 f"\"{user_context[:300]}\"\n\n"
                 f"Greet them warmly, acknowledge ONE specific thing from their "
-                f"text naturally like a friend would, then ask one gentle open "
-                f"question to help them open up. Keep it short and warm."
+                f"text like a friend would, then ask one gentle open question. "
+                f"Keep it short and warm."
                 if user_context
                 else "I just came to chat. Please greet me warmly."
             )
         }]
         opening = get_groq_response(seed, mood, user_context)
 
-    st.session_state.messages.append({
-        "role":    "assistant",
-        "content": opening
-    })
+    st.session_state.messages.append({"role": "assistant", "content": opening})
 
 
 # ══════════════════════════════════════════════════════════
@@ -219,34 +204,54 @@ with st.sidebar:
         st.markdown(f"**Last detected mood:**<br>{badge}", unsafe_allow_html=True)
         st.divider()
 
-    if st.session_state.chatbot_open:
+    page = st.session_state.page
+
+    if page in ["chat", "crisis"]:
         if st.button("🔍 Back to Analysis", use_container_width=True):
-            st.session_state.chatbot_open  = False
-            st.session_state.just_analyzed = False
+            st.session_state.page = "analyze"
             st.rerun()
         if st.button("🗑️ Clear Chat", use_container_width=True):
             open_chatbot(
                 st.session_state.detected_mood or "normal",
                 st.session_state.user_text_context,
-                st.session_state.crisis_mode
+                crisis=(page == "crisis")
+            )
+            st.rerun()
+    elif page == "results":
+        if st.button("🔍 New Analysis", use_container_width=True):
+            st.session_state.page = "analyze"
+            st.rerun()
+        if st.button("💬 Open Support Chat", use_container_width=True, key="sidebar_chat"):
+            open_chatbot(
+                st.session_state.detected_mood,
+                st.session_state.user_text_context,
+                crisis=False
             )
             st.rerun()
     else:
-        if st.button("💬 Open Support Chat", use_container_width=True):
-            mood = st.session_state.detected_mood or "normal"
-            st.session_state.just_analyzed = False
-            open_chatbot(mood, st.session_state.user_text_context, mood == "suicidal")
-            st.rerun()
+        if st.session_state.detected_mood:
+            if st.button("💬 Open Support Chat", use_container_width=True, key="sidebar_chat_analyze"):
+                open_chatbot(
+                    st.session_state.detected_mood,
+                    st.session_state.user_text_context,
+                    crisis=(st.session_state.detected_mood.lower() == "suicidal")
+                )
+                st.rerun()
 
     st.divider()
-    st.caption("⚠️ Not a clinical tool.")
+    st.subheader("Model Info 📊")
+    st.caption("Training dataset: 53,000+ samples")
+    st.caption("Categories: 7 mental health classes")
+    st.caption("Model accuracy: 87%")
+    st.caption("Algorithm: TF-IDF + Logistic Regression")
+    st.caption("This Tool is for Detecting Mental Health.")
     st.caption("For emergencies call **112**")
 
 
 # ══════════════════════════════════════════════════════════
-# CRISIS MODE
+# PAGE: CRISIS
 # ══════════════════════════════════════════════════════════
-if st.session_state.crisis_mode and st.session_state.chatbot_open:
+if st.session_state.page == "crisis":
 
     st.markdown("""
     <div class="crisis-banner">
@@ -263,7 +268,6 @@ if st.session_state.crisis_mode and st.session_state.chatbot_open:
     """, unsafe_allow_html=True)
 
     st.markdown('<div class="chat-container">', unsafe_allow_html=True)
-
     for message in st.session_state.messages:
         with st.chat_message(message["role"]):
             st.markdown(message["content"])
@@ -276,7 +280,7 @@ if st.session_state.crisis_mode and st.session_state.chatbot_open:
         recovery_signals = [
             "feel better", "feeling better", "i'm okay", "i am okay",
             "thank you", "thanks", "that helped", "i feel safe",
-            "i called", "i will call", "okay i will", "much better"
+            "i called", "i will call", "much better"
         ]
         user_recovering = any(s in prompt.lower() for s in recovery_signals)
 
@@ -288,11 +292,8 @@ if st.session_state.crisis_mode and st.session_state.chatbot_open:
                     st.session_state.user_text_context
                 )
             if user_recovering:
-                st.session_state.crisis_mode = False
-                reply += (
-                    "\n\n💙 I'm really glad you're feeling a little better. "
-                    "I'm still right here with you."
-                )
+                st.session_state.page = "chat"
+                reply += "\n\n💙 I'm really glad you're feeling a little better. I'm still right here with you."
             st.markdown(reply)
 
         st.session_state.messages.append({"role": "assistant", "content": reply})
@@ -302,9 +303,9 @@ if st.session_state.crisis_mode and st.session_state.chatbot_open:
 
 
 # ══════════════════════════════════════════════════════════
-# CHATBOT — non crisis
+# PAGE: CHAT
 # ══════════════════════════════════════════════════════════
-elif st.session_state.chatbot_open:
+elif st.session_state.page == "chat":
 
     mood = st.session_state.detected_mood or "normal"
 
@@ -335,8 +336,8 @@ elif st.session_state.chatbot_open:
         user_in_crisis  = any(s in prompt.lower() for s in crisis_signals)
 
         if user_in_crisis:
-            st.session_state.crisis_mode   = True
             st.session_state.detected_mood = "suicidal"
+            open_chatbot("suicidal", st.session_state.user_text_context, crisis=True)
             st.rerun()
 
         with st.chat_message("assistant"):
@@ -350,27 +351,70 @@ elif st.session_state.chatbot_open:
             st.markdown(reply)
 
         st.session_state.messages.append({"role": "assistant", "content": reply})
-
         if user_recovering:
             st.session_state.detected_mood = "normal"
-
         st.rerun()
 
     st.markdown('</div>', unsafe_allow_html=True)
 
 
 # ══════════════════════════════════════════════════════════
-# ANALYSIS PAGE
+# PAGE: RESULTS
 # ══════════════════════════════════════════════════════════
-elif st.session_state.just_analyzed:
+elif st.session_state.page == "results":
 
-    st.title("🔍 Mental Health Detection from Text")
+    prediction = st.session_state.detected_mood
+    scores     = st.session_state.scores
+    confidence = st.session_state.confidence
+
+    st.title("🔍 Results")
     st.divider()
-    st.subheader("Results")
 
     col1, col2, col3 = st.columns(3)
-    col1.metric("Detected Category", st.session_state.detected_mood.replace("_", " ").title())
+    col1.metric("Detected Category", prediction.replace("_", " ").title())
+    col2.metric("Confidence",        f"{confidence * 100:.1f}%")
     col3.metric("Words Analyzed",    len(st.session_state.user_text_context.split()))
+
+    sorted_scores = dict(sorted(scores.items(), key=lambda x: x[1], reverse=True))
+    colors = ["#ef4444" if k == prediction else "#94a3b8" for k in sorted_scores]
+    fig = go.Figure(go.Bar(
+        x=[k.replace("_", " ").title() for k in sorted_scores.keys()],
+        y=[v * 100 for v in sorted_scores.values()],
+        marker_color=colors,
+        text=[f"{v * 100:.1f}%" for v in sorted_scores.values()],
+        textposition="outside"
+    ))
+    fig.update_layout(
+        title="Confidence Scores by Category",
+        yaxis_title="Confidence (%)",
+        yaxis_range=[0, 110],
+        plot_bgcolor="rgba(0,0,0,0)",
+        paper_bgcolor="rgba(0,0,0,0)",
+        font=dict(size=13),
+        margin=dict(t=50, b=20)
+    )
+    st.plotly_chart(fig, use_container_width=True)
+
+    interpretations = {
+        "normal":               ("✅ No significant distress signals detected.",          "success"),
+        "depression":           ("🔴 Signals associated with depression detected.",      "error"),
+        "anxiety":              ("🟠 Signals associated with anxiety detected.",         "warning"),
+        "suicidal":             ("🚨 High risk signals detected. Please seek help now.", "error"),
+        "stress":               ("🟡 Signals associated with stress detected.",          "warning"),
+        "bipolar":              ("🟠 Signals associated with bipolar mood detected.",    "warning"),
+        "personality disorder": ("🔴 Signals of personality disorder detected.",        "error"),
+    }
+    msg, msg_type = interpretations.get(
+        prediction.lower(), (f"Category detected: {prediction.title()}", "info")
+    )
+    if msg_type == "success":
+        st.success(msg)
+    elif msg_type == "error":
+        st.error(msg)
+    elif msg_type == "warning":
+        st.warning(msg)
+    else:
+        st.info(msg)
 
     st.divider()
     st.markdown("""
@@ -384,8 +428,7 @@ elif st.session_state.just_analyzed:
     st.write("")
     col1, col2 = st.columns([2, 1])
     with col1:
-        if st.button("💬 Open Support Chat", type="primary", use_container_width=True, key="suggest_open"):
-            st.session_state.just_analyzed = False
+        if st.button("💬 Open Support Chat", type="primary", use_container_width=True):
             open_chatbot(
                 st.session_state.detected_mood,
                 st.session_state.user_text_context,
@@ -393,11 +436,11 @@ elif st.session_state.just_analyzed:
             )
             st.rerun()
     with col2:
-        if st.button("Analyze new text", use_container_width=True, key="analyze_new"):
-            st.session_state.just_analyzed = False
+        if st.button("🔍 Analyze New Text", use_container_width=True):
+            st.session_state.page = "analyze"
             st.rerun()
 
-    if st.session_state.detected_mood.lower() in ["depression", "bipolar"]:
+    if prediction.lower() in ["depression", "bipolar"]:
         st.divider()
         st.subheader("📞 Crisis Resources")
         st.info("""
@@ -409,24 +452,22 @@ elif st.session_state.just_analyzed:
 
 
 # ══════════════════════════════════════════════════════════
-# MAIN ANALYSIS FORM
+# PAGE: ANALYZE
 # ══════════════════════════════════════════════════════════
 else:
 
     st.title("🔍 Mental Health Detection from Text")
     st.caption("NLP-powered tool to identify emotional distress signals in written text.")
-    st.warning("⚠️ For educational and research purposes only. Not a clinical tool.")
+    st.warning("A Tool for detecting mental health of a person by analyzing their text.")
     st.divider()
 
     st.subheader("Try an example")
     col1, col2, col3 = st.columns(3)
-
     examples = {
         "😔 Depression": "I have been feeling completely empty for weeks. Nothing brings me joy anymore and I struggle to get out of bed every morning.",
         "😰 Anxiety":    "I cannot stop worrying about everything. My heart races constantly and I feel like something terrible is about to happen.",
         "😊 Normal":     "Had a great day today! Went for a walk, cooked a nice meal and caught up with some old friends. Feeling grateful."
     }
-
     if col1.button("😔 Depression", use_container_width=True):
         st.session_state.text_input = examples["😔 Depression"]
         st.rerun()
@@ -438,7 +479,6 @@ else:
         st.rerun()
 
     st.divider()
-
     st.subheader("Or enter your own text")
     text_input = st.text_area(
         label="",
@@ -463,110 +503,23 @@ else:
             }
             confidence = round(float(max(probabilities)), 4)
 
+        # Save to session state
         st.session_state.detected_mood     = prediction
         st.session_state.user_text_context = text_input
-        st.session_state.just_analyzed     = True
+        st.session_state.scores            = scores
+        st.session_state.confidence        = confidence
 
-        st.divider()
-        st.subheader("Results")
-
-        col1, col2, col3 = st.columns(3)
-        col1.metric("Detected Category", prediction.replace("_", " ").title())
-        col2.metric("Confidence",        f"{confidence * 100:.1f}%")
-        col3.metric("Words Analyzed",    len(text_input.split()))
-
-        sorted_scores = dict(
-            sorted(scores.items(), key=lambda x: x[1], reverse=True)
-        )
-        colors = [
-            "#ef4444" if k == prediction else "#94a3b8"
-            for k in sorted_scores
-        ]
-        fig = go.Figure(go.Bar(
-            x=[k.replace("_", " ").title() for k in sorted_scores.keys()],
-            y=[v * 100 for v in sorted_scores.values()],
-            marker_color=colors,
-            text=[f"{v * 100:.1f}%" for v in sorted_scores.values()],
-            textposition="outside"
-        ))
-        fig.update_layout(
-            title="Confidence Scores by Category",
-            yaxis_title="Confidence (%)",
-            yaxis_range=[0, 110],
-            plot_bgcolor="rgba(0,0,0,0)",
-            paper_bgcolor="rgba(0,0,0,0)",
-            font=dict(size=13),
-            margin=dict(t=50, b=20)
-        )
-        st.plotly_chart(fig, use_container_width=True)
-
-        st.subheader("Interpretation")
-        interpretations = {
-            "normal":               ("✅ No significant distress signals detected.",          "success"),
-            "depression":           ("🔴 Signals associated with depression detected.",      "error"),
-            "anxiety":              ("🟠 Signals associated with anxiety detected.",         "warning"),
-            "suicidal":             ("🚨 High risk signals detected. Please seek help now.", "error"),
-            "stress":               ("🟡 Signals associated with stress detected.",          "warning"),
-            "bipolar":              ("🟠 Signals associated with bipolar mood detected.",    "warning"),
-            "personality disorder": ("🔴 Signals of personality disorder detected.",        "error"),
-        }
-        label_key         = prediction.lower()
-        message, msg_type = interpretations.get(
-            label_key, (f"Category detected: {prediction.title()}", "info")
-        )
-        if msg_type == "success":
-            st.success(message)
-        elif msg_type == "error":
-            st.error(message)
-        elif msg_type == "warning":
-            st.warning(message)
-        else:
-            st.info(message)
-
-        # ── Suicidal → auto open crisis chatbot ────────────
+        # Auto open crisis chat for suicidal
         if prediction.lower() == "suicidal":
-            st.session_state.just_analyzed = False
             with st.spinner("Connecting you to support..."):
                 time.sleep(1.2)
             open_chatbot("suicidal", text_input, crisis=True)
             st.rerun()
 
-        # ── Other moods → show suggest box ─────────────────
+        # Go to results page for everything else
         else:
-            st.divider()
-            st.markdown("""
-            <div class="suggest-box">
-                <strong>💬 Want to talk about this?</strong><br><br>
-                Our support chatbot has read your text and is ready to listen.
-                It understands what you shared and can help you work through it.
-            </div>
-            """, unsafe_allow_html=True)
-
-            st.write("")
-            col1, col2 = st.columns([2, 1])
-            with col1:
-                if st.button("💬 Open Support Chat", type="primary", use_container_width=True, key="open_chat_main"):
-                    st.session_state.just_analyzed = False
-                    open_chatbot(
-                        st.session_state.detected_mood,
-                        st.session_state.user_text_context,
-                        crisis=False
-                    )
-                    st.rerun()
-            with col2:
-                if st.button("Maybe later", use_container_width=True, key="maybe_later_main"):
-                    st.session_state.just_analyzed = False
-                    st.info("That's okay. The chat is always available in the sidebar. 💙")
-
-            if st.session_state.detected_mood.lower() in ["depression", "bipolar"]:
-                st.divider()
-                st.subheader("📞 Crisis Resources")
-                st.info("""
-                **iCall:** 9152987821
-                **AASRA:** 91-22-27546669
-                **Vandrevala Foundation:** 1860-2662-345 *(24/7)*
-                **Tele MANAS:** 14416 *(free · 24/7)*
-                """)
+            st.session_state.page = "results"
+            st.rerun()
 
     st.divider()
     st.caption("Built with Python · scikit-learn · Groq AI · Streamlit | For educational purposes only.")
