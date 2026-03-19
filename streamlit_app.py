@@ -2,7 +2,7 @@ import streamlit as st
 import plotly.graph_objects as go
 import joblib
 import os
-import google.generativeai as genai
+from groq import Groq
 from dotenv import load_dotenv
 import time
 
@@ -27,9 +27,7 @@ st.markdown("""
         70%  { box-shadow: 0 0 0 10px rgba(239, 68, 68, 0); }
         100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0);   }
     }
-    .chat-container {
-        animation: slideIn 0.5s ease-out;
-    }
+    .chat-container { animation: slideIn 0.5s ease-out; }
     .crisis-banner {
         animation: slideIn 0.4s ease-out, pulse 2s infinite;
         background: linear-gradient(135deg, #7f1d1d, #991b1b);
@@ -59,7 +57,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# ── Load model ─────────────────────────────────────────────
+# ── Load ML model ──────────────────────────────────────────
 @st.cache_resource
 def load_model():
     model_path = "models/model.pkl"
@@ -70,49 +68,35 @@ def load_model():
 
 model = load_model()
 
-# ── Gemini client ──────────────────────────────────────────
+# ── Groq client ────────────────────────────────────────────
 @st.cache_resource
-def load_gemini():
-    api_key = os.getenv("GEMINI_API_KEY") or st.secrets.get("GEMINI_API_KEY", None)
+def load_groq():
+    api_key = os.getenv("GROQ_API_KEY") or st.secrets.get("GROQ_API_KEY", None)
     if not api_key:
         return None
+    return Groq(api_key=api_key)
 
-    genai.configure(api_key=api_key)
-
-    safety_settings = [
-        {"category": "HARM_CATEGORY_HARASSMENT",        "threshold": "BLOCK_ONLY_HIGH"},
-        {"category": "HARM_CATEGORY_HATE_SPEECH",       "threshold": "BLOCK_ONLY_HIGH"},
-        {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_ONLY_HIGH"},
-        {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_ONLY_HIGH"},
-    ]
-
-    return genai.GenerativeModel(
-        model_name="gemini-2.0-flash-lite",
-        safety_settings=safety_settings
-    )
-
-gemini_model = load_gemini()
+groq_client = load_groq()
 
 # ── Session state defaults ─────────────────────────────────
 for key, default in {
-    "chatbot_open":       False,
-    "messages":           [],
-    "detected_mood":      None,
-    "user_text_context":  "",
-    "crisis_mode":        False,
-    "text_input":         "",
+    "chatbot_open":      False,
+    "messages":          [],
+    "detected_mood":     None,
+    "user_text_context": "",
+    "crisis_mode":       False,
+    "text_input":        "",
+    "just_analyzed":     False,
 }.items():
     if key not in st.session_state:
         st.session_state[key] = default
 
 # ── Build system prompt ────────────────────────────────────
 def build_system_prompt(mood: str, user_context: str) -> str:
-
     context_line = (
         f"User's text (detected as '{mood}'): \"{user_context[:200]}\"\n\n"
         if user_context else ""
     )
-
     mood_instructions = {
         "normal":     "User seems okay. Be warm, ask what is on their mind.",
         "depression": "User shows depression signs. Validate feelings first. Be gentle. Suggest small steps.",
@@ -121,7 +105,6 @@ def build_system_prompt(mood: str, user_context: str) -> str:
         "suicidal":   "CRISIS. User may be suicidal. Be present. Ask if they are safe. Share helplines every response: iCall 9152987821, AASRA 91-22-27546669, Tele MANAS 14416.",
         "bipolar":    "User shows bipolar signs. Be calm and steady. Ask how they feel right now.",
     }
-
     mood_key     = mood.lower()
     mood_section = mood_instructions.get(mood_key, mood_instructions["normal"])
 
@@ -136,60 +119,44 @@ If user mentions self harm or suicide always share:
 iCall: 9152987821 | AASRA: 91-22-27546669 | Tele MANAS: 14416"""
 
 
-# ── Get Gemini response ────────────────────────────────────
-def get_gemini_response(messages: list, mood: str, user_context: str) -> str:
-    if gemini_model is None:
-        print("DEBUG: gemini_model is None — API key not loaded")
+# ── Get Groq response ──────────────────────────────────────
+def get_groq_response(messages: list, mood: str, user_context: str) -> str:
+    if groq_client is None:
         return (
             "I'm having trouble connecting right now. 💙\n\n"
             "If you need support please reach out to:\n\n"
             "📞 **iCall:** 9152987821\n"
             "📞 **Tele MANAS:** 14416 *(free · 24/7)*"
         )
-
     try:
-        print(f"DEBUG: mood={mood}")
-        print(f"DEBUG: messages count={len(messages)}")
-        print(f"DEBUG: last message={messages[-1] if messages else 'none'}")
-
         system_prompt = build_system_prompt(mood, user_context)
-        conversation  = system_prompt + "\n\n"
-
+        api_messages  = [{"role": "system", "content": system_prompt}]
         for m in messages:
-            if m["role"] == "user":
-                conversation += f"User: {m['content']}\n\n"
-            elif m["role"] == "assistant":
-                conversation += f"Mitra: {m['content']}\n\n"
-
-        conversation += "Mitra:"
-
-        print(f"DEBUG: sending to Gemini, prompt length={len(conversation)}")
-        response = gemini_model.generate_content(conversation)
-        print(f"DEBUG: got response successfully")
-        return response.text
+            if m["role"] in ["user", "assistant"]:
+                api_messages.append({
+                    "role":    m["role"],
+                    "content": m["content"]
+                })
+        response = groq_client.chat.completions.create(
+            model="llama-3.1-8b-instant",
+            messages=api_messages,
+            max_tokens=512,
+            temperature=0.7,
+        )
+        return response.choices[0].message.content
 
     except Exception as e:
-        print(f"DEBUG Gemini error type: {type(e)}")
-        print(f"DEBUG Gemini error: {e}")
-
+        print(f"DEBUG Groq error: {e}")
         error_msg = str(e).lower()
-
-        if "quota" in error_msg or "rate" in error_msg or "429" in error_msg:
+        if "quota" in error_msg or "429" in error_msg or "rate" in error_msg:
             return (
-                "I'm a little overwhelmed right now and need a moment. "
-                "Please try again in a few seconds. 💙"
+                "I need a short breather — please wait a moment and try again. 💙\n\n"
+                "📞 **iCall:** 9152987821\n"
+                "📞 **Tele MANAS:** 14416 *(free · 24/7)*"
             )
-        if "api key" in error_msg or "invalid" in error_msg or "403" in error_msg:
+        if "api key" in error_msg or "invalid" in error_msg or "401" in error_msg:
             return "There's a configuration issue. Please check the API key."
-        if "safety" in error_msg or "blocked" in error_msg:
-            return (
-                "I wasn't able to respond to that message due to safety filters. "
-                "Could you rephrase what you're feeling? I'm still here. 💙"
-            )
-        return (
-            "I'm a little overwhelmed right now and need a moment. "
-            "Please try again in a few seconds. 💙"
-        )
+        return "Something went wrong on my end. Please try again. 💙"
 
 
 # ── Open chatbot with opening message ─────────────────────
@@ -211,22 +178,22 @@ def open_chatbot(mood: str, user_context: str, crisis: bool = False):
             "📞 **AASRA:** 91-22-27546669\n"
             "📞 **Vandrevala Foundation:** 1860-2662-345 *(24/7)*\n"
             "📞 **Tele MANAS:** 14416 *(free · 24/7)*\n\n"
-            "I'm here. Take your time. You don't have to say anything perfect."
+            "I'm here. Take your time."
         )
     else:
-        # Generate context-aware opening using Gemini
         seed = [{
-            "role": "user",
+            "role":    "user",
             "content": (
-                f"My text was analyzed and detected as '{mood}'. "
-                f"The text I wrote was: \"{user_context}\". "
-                f"Please greet me warmly, briefly acknowledge what I shared "
-                f"and ask one gentle open question to help me open up."
+                f"The user wrote this text and it was detected as '{mood}':\n"
+                f"\"{user_context[:300]}\"\n\n"
+                f"Greet them warmly, acknowledge ONE specific thing from their "
+                f"text naturally like a friend would, then ask one gentle open "
+                f"question to help them open up. Keep it short and warm."
                 if user_context
-                else f"I just came to chat. Please greet me warmly."
+                else "I just came to chat. Please greet me warmly."
             )
         }]
-        opening = get_gemini_response(seed, mood, user_context)
+        opening = get_groq_response(seed, mood, user_context)
 
     st.session_state.messages.append({
         "role":    "assistant",
@@ -254,7 +221,8 @@ with st.sidebar:
 
     if st.session_state.chatbot_open:
         if st.button("🔍 Back to Analysis", use_container_width=True):
-            st.session_state.chatbot_open = False
+            st.session_state.chatbot_open  = False
+            st.session_state.just_analyzed = False
             st.rerun()
         if st.button("🗑️ Clear Chat", use_container_width=True):
             open_chatbot(
@@ -266,6 +234,7 @@ with st.sidebar:
     else:
         if st.button("💬 Open Support Chat", use_container_width=True):
             mood = st.session_state.detected_mood or "normal"
+            st.session_state.just_analyzed = False
             open_chatbot(mood, st.session_state.user_text_context, mood == "suicidal")
             st.rerun()
 
@@ -313,7 +282,7 @@ if st.session_state.crisis_mode and st.session_state.chatbot_open:
 
         with st.chat_message("assistant"):
             with st.spinner(""):
-                reply = get_gemini_response(
+                reply = get_groq_response(
                     st.session_state.messages,
                     "suicidal",
                     st.session_state.user_text_context
@@ -322,7 +291,7 @@ if st.session_state.crisis_mode and st.session_state.chatbot_open:
                 st.session_state.crisis_mode = False
                 reply += (
                     "\n\n💙 I'm really glad you're feeling a little better. "
-                    "I'm still right here with you — take all the time you need."
+                    "I'm still right here with you."
                 )
             st.markdown(reply)
 
@@ -373,7 +342,7 @@ elif st.session_state.chatbot_open:
         with st.chat_message("assistant"):
             with st.spinner(""):
                 current_mood = "normal" if user_recovering else mood
-                reply = get_gemini_response(
+                reply = get_groq_response(
                     st.session_state.messages,
                     current_mood,
                     st.session_state.user_text_context
@@ -392,6 +361,55 @@ elif st.session_state.chatbot_open:
 
 # ══════════════════════════════════════════════════════════
 # ANALYSIS PAGE
+# ══════════════════════════════════════════════════════════
+elif st.session_state.just_analyzed:
+
+    st.title("🔍 Mental Health Detection from Text")
+    st.divider()
+    st.subheader("Results")
+
+    col1, col2, col3 = st.columns(3)
+    col1.metric("Detected Category", st.session_state.detected_mood.replace("_", " ").title())
+    col3.metric("Words Analyzed",    len(st.session_state.user_text_context.split()))
+
+    st.divider()
+    st.markdown("""
+    <div class="suggest-box">
+        <strong>💬 Want to talk about this?</strong><br><br>
+        Our support chatbot has read your text and is ready to listen.
+        It understands what you shared and can help you work through it.
+    </div>
+    """, unsafe_allow_html=True)
+
+    st.write("")
+    col1, col2 = st.columns([2, 1])
+    with col1:
+        if st.button("💬 Open Support Chat", type="primary", use_container_width=True, key="suggest_open"):
+            st.session_state.just_analyzed = False
+            open_chatbot(
+                st.session_state.detected_mood,
+                st.session_state.user_text_context,
+                crisis=False
+            )
+            st.rerun()
+    with col2:
+        if st.button("Analyze new text", use_container_width=True, key="analyze_new"):
+            st.session_state.just_analyzed = False
+            st.rerun()
+
+    if st.session_state.detected_mood.lower() in ["depression", "bipolar"]:
+        st.divider()
+        st.subheader("📞 Crisis Resources")
+        st.info("""
+        **iCall:** 9152987821
+        **AASRA:** 91-22-27546669
+        **Vandrevala Foundation:** 1860-2662-345 *(24/7)*
+        **Tele MANAS:** 14416 *(free · 24/7)*
+        """)
+
+
+# ══════════════════════════════════════════════════════════
+# MAIN ANALYSIS FORM
 # ══════════════════════════════════════════════════════════
 else:
 
@@ -447,12 +465,13 @@ else:
 
         st.session_state.detected_mood     = prediction
         st.session_state.user_text_context = text_input
+        st.session_state.just_analyzed     = True
 
         st.divider()
         st.subheader("Results")
 
         col1, col2, col3 = st.columns(3)
-        col1.metric("Detected Category", st.session_state.detected_mood.replace("_", " ").title())
+        col1.metric("Detected Category", prediction.replace("_", " ").title())
         col2.metric("Confidence",        f"{confidence * 100:.1f}%")
         col3.metric("Words Analyzed",    len(text_input.split()))
 
@@ -491,9 +510,9 @@ else:
             "bipolar":              ("🟠 Signals associated with bipolar mood detected.",    "warning"),
             "personality disorder": ("🔴 Signals of personality disorder detected.",        "error"),
         }
-        label_key         = st.session_state.detected_mood.lower()
+        label_key         = prediction.lower()
         message, msg_type = interpretations.get(
-            label_key, (f"Category detected: {st.session_state.detected_mood.title()}", "info")
+            label_key, (f"Category detected: {prediction.title()}", "info")
         )
         if msg_type == "success":
             st.success(message)
@@ -506,44 +525,43 @@ else:
 
         # ── Suicidal → auto open crisis chatbot ────────────
         if prediction.lower() == "suicidal":
-            st.divider()
+            st.session_state.just_analyzed = False
             with st.spinner("Connecting you to support..."):
                 time.sleep(1.2)
             open_chatbot("suicidal", text_input, crisis=True)
             st.rerun()
 
-        # ── Other moods → suggest chatbot ──────────────────
+        # ── Other moods → show suggest box ─────────────────
         else:
             st.divider()
-st.markdown("""
-<div class="suggest-box">
-    <strong>💬 Want to talk about this?</strong><br><br>
-    Our support chatbot has read your text and is ready to listen.
-    It understands what you shared and can help you work through it.
-</div>
-""", unsafe_allow_html=True)
+            st.markdown("""
+            <div class="suggest-box">
+                <strong>💬 Want to talk about this?</strong><br><br>
+                Our support chatbot has read your text and is ready to listen.
+                It understands what you shared and can help you work through it.
+            </div>
+            """, unsafe_allow_html=True)
 
-st.write("")
-col1, col2 = st.columns([2, 1])
-with col1:
-    if st.button("💬 Open Support Chat", type="primary", use_container_width=True):
-        # Use session state values — not local variables
-        open_chatbot(
-            st.session_state.detected_mood,
-            st.session_state.user_text_context,
-            crisis=False
-        )
-        st.rerun()
-with col2:
-    if st.button("Maybe later", use_container_width=True):
-        st.info("That's okay. The chat is always available in the sidebar whenever you're ready. 💙")
-            
+            st.write("")
+            col1, col2 = st.columns([2, 1])
+            with col1:
+                if st.button("💬 Open Support Chat", type="primary", use_container_width=True, key="open_chat_main"):
+                    st.session_state.just_analyzed = False
+                    open_chatbot(
+                        st.session_state.detected_mood,
+                        st.session_state.user_text_context,
+                        crisis=False
+                    )
+                    st.rerun()
+            with col2:
+                if st.button("Maybe later", use_container_width=True, key="maybe_later_main"):
+                    st.session_state.just_analyzed = False
+                    st.info("That's okay. The chat is always available in the sidebar. 💙")
 
-if st.session_state.detected_mood and st.session_state.detected_mood.lower() in ["depression", "bipolar"]:
-
-    st.divider()
-    st.subheader("📞 Crisis Resources")
-    st.info("""
+            if st.session_state.detected_mood.lower() in ["depression", "bipolar"]:
+                st.divider()
+                st.subheader("📞 Crisis Resources")
+                st.info("""
                 **iCall:** 9152987821
                 **AASRA:** 91-22-27546669
                 **Vandrevala Foundation:** 1860-2662-345 *(24/7)*
@@ -551,4 +569,4 @@ if st.session_state.detected_mood and st.session_state.detected_mood.lower() in 
                 """)
 
     st.divider()
-    st.caption("Built with Python · scikit-learn · Gemini AI · Streamlit | For educational purposes only.")
+    st.caption("Built with Python · scikit-learn · Groq AI · Streamlit | For educational purposes only.")
