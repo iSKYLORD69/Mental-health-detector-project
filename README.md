@@ -8,6 +8,13 @@ Started This porject : 18 March 7:17PM for techfest showcase
 ![Groq](https://img.shields.io/badge/Groq-Llama_3.1-412991?style=flat-square)
 
 
+**MindScan detects mental health distress signals in written text using NLP and connects users to Mello 🫧 — an AI support chatbot that already knows what you shared.**
+
+🔗 **Live Demo:** [mindscanwithmello.streamlit.app](https://mindscanwithmello.streamlit.app)
+
+---
+
+
 
 
 
