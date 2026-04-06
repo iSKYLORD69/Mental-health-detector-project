@@ -14,6 +14,16 @@ Started This porject : 18 March 7:17PM for techfest showcase
 
 ---
 
+## What it does
+
+You type something — a journal entry, how you're feeling, anything — and MindScan tells you what mental health signals it detects. If you want to talk about it, Mello opens and already has context from what you wrote.
+
+**7 categories detected:** Normal · Depression · Anxiety · Stress · Suicidal · Bipolar · Personality Disorder
+
+If suicidal signals are detected, Mello opens automatically with Indian crisis helpline numbers.
+
+---
+
 
 
 
