@@ -24,6 +24,21 @@ If suicidal signals are detected, Mello opens automatically with Indian crisis h
 
 ---
 
+---
+
+## Tech Stack
+
+| What | Tool |
+|---|---|
+| ML model | scikit-learn |
+| Web app | Streamlit |
+| AI chatbot | Groq (Llama 3.1) |
+| Charts | Plotly |
+| Data | pandas |
+
+---
+
+
 ## How it works
 
 ```
