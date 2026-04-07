@@ -53,6 +53,17 @@ Your text → TF-IDF converts it to numbers → Logistic Regression predicts cat
 
 **Model:** TF-IDF (15k features) + Logistic Regression · **Accuracy:** ~78% · **Dataset:** 53,000+ Reddit posts
 
+## Run locally
+
+```bash
+# Clone and setup
+git clone https://github.com/YOUR_USERNAME/mental-health-detector.git
+cd mental-health-detector
+python -m venv venv
+.\venv\Scripts\Activate.ps1      # Windows
+pip install -r requirements.txt
+
+
 
 
 
