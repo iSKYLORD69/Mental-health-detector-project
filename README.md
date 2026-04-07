@@ -24,7 +24,7 @@ If suicidal signals are detected, Mello opens automatically with Indian crisis h
 
 ---
 
-# How it works
+## How it works
 
 ```
 Your text → TF-IDF converts it to numbers → Logistic Regression predicts category
@@ -36,6 +36,7 @@ Your text → TF-IDF converts it to numbers → Logistic Regression predicts cat
                                            Context-aware chat begins
 ```
 
+**Model:** TF-IDF (15k features) + Logistic Regression · **Accuracy:** ~78% · **Dataset:** 53,000+ Reddit posts
 
 
 
