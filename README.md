@@ -24,6 +24,19 @@ If suicidal signals are detected, Mello opens automatically with Indian crisis h
 
 ---
 
+# How it works
+
+```
+Your text → TF-IDF converts it to numbers → Logistic Regression predicts category
+                                                        ↓
+                                           Confidence score + bar chart
+                                                        ↓
+                                           Mello reads your text + mood
+                                                        ↓
+                                           Context-aware chat begins
+```
+
+
 
 
 
