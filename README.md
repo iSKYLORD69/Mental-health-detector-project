@@ -71,6 +71,22 @@ python train.py
 streamlit run streamlit_app.py
 
 
+```
+
+---
+
+## Project files
+
+```
+├── train.py           ← trains and saves the ML model
+├── streamlit_app.py   ← the entire web app
+├── app.py             ← FastAPI backend (optional)
+├── data/              ← dataset CSV (not in Git)
+└── models/            ← saved model.pkl
+```
+
+---
+
 
 
 
