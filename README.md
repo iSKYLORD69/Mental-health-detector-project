@@ -63,6 +63,12 @@ python -m venv venv
 .\venv\Scripts\Activate.ps1      # Windows
 pip install -r requirements.txt
 
+# Add your Groq API key (get free key at console.groq.com)
+echo GROQ_API_KEY=your_key_here > .env
+
+# Train the model then run
+python train.py
+streamlit run streamlit_app.py
 
 
 
