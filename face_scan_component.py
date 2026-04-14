@@ -20,6 +20,8 @@ RTC_CONFIG = RTCConfiguration({
 class EmotionVideoProcessor:
     def __init__(self):
         self.detector    = get_fer_detector()
+        if self.detector is None:
+            raise Exception("FER  failed to load. Check console for details.")
         self.frame_data  = []          # list of emotion dicts
         self.lock        = threading.Lock()
         self.scanning    = False

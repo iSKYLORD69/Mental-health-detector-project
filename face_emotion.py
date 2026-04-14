@@ -1,9 +1,13 @@
 # face_emotion.py
 import numpy as np
 def get_fer_detector():
-    from fer import FER
-    return FER(mtcnn=False)
-
+    try:
+        from fer import FER
+        return FER(mtcnn=False)
+    except Exception as e:
+        print("FER load error:", e)
+        return None
+    
 # ── Emotion → Mental Health mapping ────────────────────────
 EMOTION_TO_MENTAL = {
     "sad":      {"depression": 0.80, "stress": 0.30},
