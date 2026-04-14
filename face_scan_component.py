@@ -4,7 +4,7 @@ import av
 import threading
 import time
 from streamlit_webrtc import webrtc_streamer, WebRtcMode, RTCConfiguration
-from face_emotion import get_fer_detector, average_emotion_frames, map_to_mental_health, describe_face_scan
+from face_emotion import get_fer_detector, get_fer_load_error, average_emotion_frames, map_to_mental_health, describe_face_scan
 
 RTC_CONFIG = RTCConfiguration({
     "iceServers": [
@@ -17,11 +17,20 @@ RTC_CONFIG = RTCConfiguration({
     ]
 })
 
+# ── Try to load FER once at module level ─────────────────────
+# Cache it so we don't re-load on every Streamlit rerun
+@st.cache_resource
+def _load_fer():
+    return get_fer_detector()
+
+_cached_detector = _load_fer()
+
+
 class EmotionVideoProcessor:
     def __init__(self):
-        self.detector    = get_fer_detector()
-        if self.detector is None:
-            raise Exception("FER  failed to load. Check console for details.")
+        self.detector    = _cached_detector
+        # Don't raise here — if detector is None, recv() will
+        # just pass frames through without annotation.
         self.frame_data  = []          # list of emotion dicts
         self.lock        = threading.Lock()
         self.scanning    = False
@@ -29,6 +38,11 @@ class EmotionVideoProcessor:
 
     def recv(self, frame):
         img = frame.to_ndarray(format="bgr24")
+
+        # If FER didn't load, just return the raw frame
+        if self.detector is None:
+            return av.VideoFrame.from_ndarray(img, format="bgr24")
+
         result = self.detector.detect_emotions(img)
 
         if result:
@@ -92,6 +106,30 @@ def render_face_scan_tab():
         No video is stored or sent anywhere.
     </div>
     """, unsafe_allow_html=True)
+
+    # ── Check if FER is available ────────────────────────────
+    if _cached_detector is None:
+        err = get_fer_load_error() or "Unknown error"
+        st.error(
+            "⚠️ **Face Scan is temporarily unavailable** on this deployment.\n\n"
+            "The facial emotion recognition engine (FER / TensorFlow) could not be loaded. "
+            "This typically happens on Streamlit Cloud due to memory or dependency constraints.\n\n"
+            f"**Error:** `{err}`\n\n"
+            "**Alternatives:**\n"
+            "- Use the **✍️ Analyze Text** tab instead — it works everywhere!\n"
+            "- Run the app locally with `streamlit run streamlit_app.py` for full face-scan support."
+        )
+        st.markdown("""
+        <div style="background:rgba(56,189,248,0.08);border:1px solid rgba(56,189,248,0.2);
+                    border-radius:14px;padding:16px 20px;margin-top:12px;
+                    font-family:'DM Sans',sans-serif;font-size:0.85rem;
+                    color:rgba(255,255,255,0.6);line-height:1.8;">
+            💡 <strong style="color:#38bdf8">Tip:</strong> Text analysis uses the same
+            AI model and produces equally accurate results.
+            Switch to the <strong style="color:#c4b5fd">Analyze Text</strong> tab above.
+        </div>
+        """, unsafe_allow_html=True)
+        return    # ← Don't render the WebRTC streamer at all
 
     # Init session keys
     for k, v in {
