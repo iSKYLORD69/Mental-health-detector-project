@@ -1,13 +1,6 @@
 # face_emotion.py
 import numpy as np
-def get_fer_detector():
-    try:
-        from fer import FER
-        return FER(mtcnn=False)
-    except Exception as e:
-        print("FER load error:", e)
-        return None
-    
+
 # ── Emotion → Mental Health mapping ────────────────────────
 EMOTION_TO_MENTAL = {
     "sad":      {"depression": 0.80, "stress": 0.30},
@@ -30,7 +23,12 @@ LABEL_DISPLAY = {
 
 def get_fer_detector():
     """Load FER detector (cached by caller)."""
-    return FER(mtcnn=False)   # mtcnn=False = lighter, faster, works on cloud
+    try:
+        from fer import FER
+        return FER(mtcnn=False)   # mtcnn=False = lighter, faster, works on cloud
+    except Exception as e:
+        print("FER load error:", e)
+        return None
 
 def average_emotion_frames(frame_list: list[dict]) -> dict:
     """

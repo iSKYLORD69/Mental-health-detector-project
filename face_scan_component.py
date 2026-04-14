@@ -160,8 +160,8 @@ def render_face_scan_tab():
             st.session_state.mood_history.append(prediction)
 
             if prediction == "suicidal":
-                from streamlit_app import open_mello
-                open_mello("suicidal", description, crisis=True)
+                st.session_state.page = "crisis"
+                st.session_state._face_crisis_pending = True
             else:
                 st.session_state.page = "results"
             st.rerun()

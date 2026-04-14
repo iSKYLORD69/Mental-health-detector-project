@@ -567,6 +567,11 @@ def render_topbar():
 
 render_topbar()
 
+# Handle face-scan crisis trigger (avoids circular import in face_scan_component)
+if st.session_state.get("_face_crisis_pending"):
+    st.session_state._face_crisis_pending = False
+    open_mello("suicidal", st.session_state.user_text_context, crisis=True)
+    st.rerun()
 
 # ══════════════════════════════════════════════════════════
 # PAGE: CRISIS
