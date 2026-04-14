@@ -5,5 +5,8 @@ groq
 python-dotenv
 scikit-learn
 requests
-numpy
+opencv-python-headless==4.8.1.78
+fer==22.5.1
+streamlit-webrtc
+av
 Pillow
