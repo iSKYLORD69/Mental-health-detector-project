@@ -9,7 +9,11 @@ from face_emotion import get_fer_detector, average_emotion_frames, map_to_mental
 RTC_CONFIG = RTCConfiguration({
     "iceServers": [
         {"urls": ["stun:stun.l.google.com:19302"]},
-        {"urls": ["stun:stun1.l.google.com:19302"]},
+        {
+            "urls": ["turn:openrelay.metered.ca:80"],
+            "username": "openrelayproject",
+            "credential": "openrelayproject",
+        },
     ]
 })
 
