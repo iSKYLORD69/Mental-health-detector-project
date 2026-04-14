@@ -1,6 +1,8 @@
 # face_emotion.py
 import numpy as np
-from fer import FER
+def get_fer_detector():
+    from fer import FER
+    return FER(mtcnn=False)
 
 # ── Emotion → Mental Health mapping ────────────────────────
 EMOTION_TO_MENTAL = {
