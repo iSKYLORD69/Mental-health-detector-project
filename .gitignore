@@ -4,6 +4,7 @@ _pycache__/
 .env
 venv/
 env/
+venv310/
 data/*.csv
 data/*.json
 .vscode/
