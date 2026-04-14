@@ -7,12 +7,7 @@ from dotenv import load_dotenv
 import time
 import streamlit.components.v1 as components
 from nearby import geocode_city, get_nearby_places, build_map_html, build_location_detector_html
-try:
-    from face_scan_component import render_face_scan_tab
-except Exception:
-    def render_face_scan_tab():
-        import streamlit as _st
-        _st.info("📷 Face scan is not available in this deployment. Use the **✍️ Analyze Text** tab instead.")
+from face_scan_component import render_face_scan_tab
 
 load_dotenv()
 
@@ -392,8 +387,6 @@ def load_groq():
 
 groq_client = load_groq()
 
-#SESSION STATE BLOCK
-
 for k, v in {
     "page":                 "analyze",
     "messages":             [],
@@ -407,8 +400,8 @@ for k, v in {
     "user_lat":             None,       # ← add
     "user_lng":             None,       # ← add
     "nearby_places":        [],         # ← add
-    "selected_place_idx":   None,       # ← add
-    "scan_source": "text",   # "text" or "face"
+    "selected_place_idx":   None,
+    "scan_source": "text",       # ← add
 }.items():
     if k not in st.session_state:
         st.session_state[k] = v
@@ -416,9 +409,7 @@ for k, v in {
 
 # ── System prompt ──────────────────────────────────────────
 def build_system_prompt(mood, ctx):
-    source = st.session_state.get("scan_source", "text")
-    src_label = "facial expression scan" if source == "face" else "text analysis"
-    cl = f"User's {src_label} detected '{mood}': \"{ctx[:200]}\"\n\n" if ctx else ""
+    cl = f"User's text ('{mood}'): \"{ctx[:200]}\"\n\n" if ctx else ""
     m  = {
         "normal":     "Warm and welcoming. Ask what is on their mind.",
         "depression": "Validate first. Never rush to fix. Gentle small steps.",
@@ -511,10 +502,6 @@ def render_topbar():
                     background-clip:text;white-space:nowrap;">
             🧠 MindScan
         </div>
-        <div style="font-size:0.72rem;color:rgba(255,255,255,0.25);
-                    font-family:'Syne',sans-serif;letter-spacing:0.1em;">
-            MENTAL HEALTH AI
-        </div>
     </div>
     """, unsafe_allow_html=True)
 
@@ -572,11 +559,6 @@ def render_topbar():
 
 render_topbar()
 
-# Handle face-scan crisis trigger (avoids circular import in face_scan_component)
-if st.session_state.get("_face_crisis_pending"):
-    st.session_state._face_crisis_pending = False
-    open_mello("suicidal", st.session_state.user_text_context, crisis=True)
-    st.rerun()
 
 # ══════════════════════════════════════════════════════════
 # PAGE: CRISIS
@@ -705,12 +687,6 @@ elif st.session_state.page == "results":
 
     st.write("")
     c1, c2, c3 = st.columns(3)
-    # Show which scan type produced this result
-    source = st.session_state.get("scan_source", "text")
-    source_label = "📷 Face Scan" if source == "face" else "✍️ Text Analysis"
-    st.markdown(f'<div style="text-align:center;margin-bottom:8px;">'
-                f'<span class="tag">{source_label}</span></div>',
-                unsafe_allow_html=True)
     c1.metric("Detected",   prediction.replace("_"," ").title())
     c2.metric("Confidence", f"{confidence*100:.1f}%")
     c3.metric("Words",      len(st.session_state.user_text_context.split()))
@@ -1241,61 +1217,28 @@ else:
     st.warning("A Tool for detecting mental health of a person by analyzing their text.")
     st.write("")
 
-    # ── Example buttons ─────────────────────────────
-    st.markdown('<div class="section-label">Try an example</div>',
-                unsafe_allow_html=True)
-
-    c1, c2, c3 = st.columns(3)
-
-    ex = {
-        "😔 Depression": "I have been feeling completely empty for weeks. Nothing brings me joy anymore and I struggle to get out of bed every morning.",
-        "😰 Anxiety":    "I cannot stop worrying about everything. My heart races constantly and I feel like something terrible is about to happen.",
-        "😊 Normal":     "Had a great day today! Went for a walk, cooked a nice meal and caught up with some old friends. Feeling grateful.",
-    }
-
-    if c1.button("😔 Depression", use_container_width=True):
-        st.session_state.text_input = ex["😔 Depression"]
-        st.rerun()
-
-    if c2.button("😰 Anxiety", use_container_width=True):
-        st.session_state.text_input = ex["😰 Anxiety"]
-        st.rerun()
-
-    if c3.button("😊 Normal", use_container_width=True):
-        st.session_state.text_input = ex["😊 Normal"]
-        st.rerun()
-
-    st.write("")
-
-    # ── Tabs (TEXT + FACE) ─────────────────────────
     tab_text, tab_face = st.tabs(["✍️  Analyze Text", "📷  Live Face Scan"])
 
-    # ── TEXT TAB ───────────────────────────────────
     with tab_text:
         st.markdown('<div class="section-label">Or write your own</div>',
                     unsafe_allow_html=True)
-
         text_input = st.text_area(
             label="",
             height=160,
             value=st.session_state.get("text_input", ""),
             placeholder="How have you been feeling lately? Write freely — this is a safe space...",
         )
-
         st.write("")
-
         if st.button("✦ Analyze Text", type="primary", use_container_width=True):
             if not text_input.strip():
                 st.error("Please enter some text first.")
                 st.stop()
-
             with st.spinner("Scanning for signals..."):
                 pred  = model.predict([text_input])[0]
                 proba = model.predict_proba([text_input])[0]
                 lbls  = model.classes_
                 sc    = {l: round(float(p),4) for l,p in zip(lbls,proba)}
                 conf  = round(float(max(proba)),4)
-
             st.session_state.detected_mood     = pred
             st.session_state.user_text_context = text_input
             st.session_state.scores            = sc
@@ -1303,43 +1246,30 @@ else:
             st.session_state.scan_source       = "text"
             st.session_state.total_scans      += 1
             st.session_state.mood_history.append(pred)
-
             if pred.lower() == "suicidal":
                 with st.spinner("Connecting you to Mello..."):
                     time.sleep(1.2)
                 open_mello("suicidal", text_input, crisis=True)
             else:
                 st.session_state.page = "results"
-
             st.rerun()
 
-    # ── FACE TAB ───────────────────────────────────
     with tab_face:
         render_face_scan_tab()
-
-    # ── Session Stats ─────────────────────────────
     st.write("")
 
+
+    # Stats row
     if st.session_state.total_scans > 0:
         st.divider()
-        st.markdown('<div class="section-label">Session</div>',
-                    unsafe_allow_html=True)
-
+        st.markdown('<div class="section-label">Session</div>', unsafe_allow_html=True)
         s1, s2, s3 = st.columns(3)
-
         s1.metric("Scans done", st.session_state.total_scans)
-
         if st.session_state.detected_mood:
-            s2.metric("Last result",
-                      st.session_state.detected_mood.title())
+            s2.metric("Last result", st.session_state.detected_mood.title())
+        s3.metric("Confidence", f"{st.session_state.confidence*100:.0f}%"
+                  if st.session_state.confidence else "—")
 
-        s3.metric(
-            "Confidence",
-            f"{st.session_state.confidence*100:.0f}%"
-            if st.session_state.confidence else "—"
-        )
-
-    # ── Footer ────────────────────────────────────
     st.markdown(
         '<div class="footer-txt" style="margin-top:28px">'
         'Built with Python · Scikit-learn · Groq · Streamlit'

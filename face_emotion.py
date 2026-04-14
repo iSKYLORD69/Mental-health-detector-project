@@ -1,6 +1,6 @@
 # face_emotion.py
 import numpy as np
-import traceback
+from fer import FER
 
 # ── Emotion → Mental Health mapping ────────────────────────
 EMOTION_TO_MENTAL = {
@@ -22,28 +22,9 @@ LABEL_DISPLAY = {
     "suicidal":   "Suicidal",
 }
 
-# Global to cache the load error message for display in UI
-_fer_load_error = None
-
 def get_fer_detector():
     """Load FER detector (cached by caller)."""
-    global _fer_load_error
-    try:
-        from fer import FER
-        detector = FER(mtcnn=False)   # mtcnn=False = lighter, faster, works on cloud
-        _fer_load_error = None
-        return detector
-    except Exception as e:
-        _fer_load_error = str(e)
-        print("=" * 60)
-        print("FER LOAD ERROR:")
-        traceback.print_exc()
-        print("=" * 60)
-        return None
-
-def get_fer_load_error():
-    """Return the last FER load error message, if any."""
-    return _fer_load_error
+    return FER(mtcnn=False)   # mtcnn=False = lighter, faster, works on cloud
 
 def average_emotion_frames(frame_list: list[dict]) -> dict:
     """
