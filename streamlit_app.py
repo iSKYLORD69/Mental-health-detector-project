@@ -7,7 +7,12 @@ from dotenv import load_dotenv
 import time
 import streamlit.components.v1 as components
 from nearby import geocode_city, get_nearby_places, build_map_html, build_location_detector_html
-from face_scan_component import render_face_scan_tab
+try:
+    from face_scan_component import render_face_scan_tab
+except Exception:
+    def render_face_scan_tab():
+        import streamlit as _st
+        _st.info("📷 Face scan is not available in this deployment. Use the **✍️ Analyze Text** tab instead.")
 
 load_dotenv()
 

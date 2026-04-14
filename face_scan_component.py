@@ -1,113 +1,147 @@
 # face_scan_component.py
+# All heavy dependencies (streamlit-webrtc, av, fer, opencv) are optional.
+# If missing, the face scan tab shows a friendly fallback message.
+
 import streamlit as st
-import av
-import threading
-import time
-from streamlit_webrtc import webrtc_streamer, WebRtcMode, RTCConfiguration
-from face_emotion import get_fer_detector, get_fer_load_error, average_emotion_frames, map_to_mental_health, describe_face_scan
 
-RTC_CONFIG = RTCConfiguration({
-    "iceServers": [
-        {"urls": ["stun:stun.l.google.com:19302"]},
-        {
-            "urls": ["turn:openrelay.metered.ca:80"],
-            "username": "openrelayproject",
-            "credential": "openrelayproject",
-        },
-    ]
-})
+# ── Try importing optional heavy deps ────────────────────────
+_FACE_SCAN_AVAILABLE = False
+_FACE_SCAN_ERROR = None
 
-# ── Try to load FER once at module level ─────────────────────
-# Cache it so we don't re-load on every Streamlit rerun
-@st.cache_resource
-def _load_fer():
-    return get_fer_detector()
+try:
+    import av
+    from streamlit_webrtc import webrtc_streamer, WebRtcMode, RTCConfiguration
+    import threading
+    import time
+    from face_emotion import (
+        get_fer_detector, get_fer_load_error,
+        average_emotion_frames, map_to_mental_health, describe_face_scan,
+    )
 
-_cached_detector = _load_fer()
+    RTC_CONFIG = RTCConfiguration({
+        "iceServers": [
+            {"urls": ["stun:stun.l.google.com:19302"]},
+            {
+                "urls": ["turn:openrelay.metered.ca:80"],
+                "username": "openrelayproject",
+                "credential": "openrelayproject",
+            },
+        ]
+    })
 
+    # ── Try to load FER once ─────────────────────────────────
+    @st.cache_resource
+    def _load_fer():
+        return get_fer_detector()
 
-class EmotionVideoProcessor:
-    def __init__(self):
-        self.detector    = _cached_detector
-        # Don't raise here — if detector is None, recv() will
-        # just pass frames through without annotation.
-        self.frame_data  = []          # list of emotion dicts
-        self.lock        = threading.Lock()
-        self.scanning    = False
-        self.last_result = None        # last per-frame emotion dict
+    _cached_detector = _load_fer()
 
-    def recv(self, frame):
-        img = frame.to_ndarray(format="bgr24")
+    class EmotionVideoProcessor:
+        def __init__(self):
+            self.detector    = _cached_detector
+            self.frame_data  = []          # list of emotion dicts
+            self.lock        = threading.Lock()
+            self.scanning    = False
+            self.last_result = None        # last per-frame emotion dict
 
-        # If FER didn't load, just return the raw frame
-        if self.detector is None:
+        def recv(self, frame):
+            img = frame.to_ndarray(format="bgr24")
+
+            # If FER didn't load, just return the raw frame
+            if self.detector is None:
+                return av.VideoFrame.from_ndarray(img, format="bgr24")
+
+            result = self.detector.detect_emotions(img)
+
+            if result:
+                emotions = result[0]["emotions"]
+                self.last_result = emotions
+                if self.scanning:
+                    with self.lock:
+                        self.frame_data.append(emotions)
+
+                # Draw bounding box + dominant emotion
+                import cv2
+                x, y, w, h = result[0]["box"]
+                dominant   = max(emotions, key=emotions.get)
+                score      = emotions[dominant]
+                color_map  = {
+                    "happy":   (52,  211, 153),
+                    "sad":     (96,  165, 250),
+                    "angry":   (239, 68,  68 ),
+                    "fear":    (251, 191, 36 ),
+                    "disgust": (167, 139, 250),
+                    "neutral": (156, 163, 175),
+                    "surprise":(251, 146, 60 ),
+                }
+                color = color_map.get(dominant, (255, 255, 255))
+                cv2.rectangle(img, (x, y), (x + w, y + h), color, 2)
+                label = f"{dominant.upper()}  {score:.0%}"
+                cv2.putText(img, label, (x, y - 10),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.65, color, 2)
+
             return av.VideoFrame.from_ndarray(img, format="bgr24")
 
-        result = self.detector.detect_emotions(img)
+        def start_scan(self):
+            with self.lock:
+                self.frame_data = []
+                self.scanning   = True
 
-        if result:
-            emotions = result[0]["emotions"]
-            self.last_result = emotions
-            if self.scanning:
-                with self.lock:
-                    self.frame_data.append(emotions)
+        def stop_scan(self) -> list:
+            with self.lock:
+                self.scanning = False
+                return list(self.frame_data)
 
-            # Draw bounding box + dominant emotion
-            import cv2
-            x, y, w, h = result[0]["box"]
-            dominant   = max(emotions, key=emotions.get)
-            score      = emotions[dominant]
-            color_map  = {
-                "happy":   (52,  211, 153),
-                "sad":     (96,  165, 250),
-                "angry":   (239, 68,  68 ),
-                "fear":    (251, 191, 36 ),
-                "disgust": (167, 139, 250),
-                "neutral": (156, 163, 175),
-                "surprise":(251, 146, 60 ),
-            }
-            color = color_map.get(dominant, (255, 255, 255))
-            cv2.rectangle(img, (x, y), (x + w, y + h), color, 2)
-            label = f"{dominant.upper()}  {score:.0%}"
-            cv2.putText(img, label, (x, y - 10),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.65, color, 2)
+    _FACE_SCAN_AVAILABLE = True
 
-        return av.VideoFrame.from_ndarray(img, format="bgr24")
-
-    def start_scan(self):
-        with self.lock:
-            self.frame_data = []
-            self.scanning   = True
-
-    def stop_scan(self) -> list:
-        with self.lock:
-            self.scanning = False
-            return list(self.frame_data)
+except ImportError as e:
+    _FACE_SCAN_ERROR = str(e)
+except Exception as e:
+    _FACE_SCAN_ERROR = str(e)
 
 
 def render_face_scan_tab():
     """
     Call this inside your Analyze page tab.
-    Sets st.session_state keys:
-        detected_mood, scores, confidence,
-        user_text_context, scan_source
-    on completion.
+    If heavy dependencies aren't installed, shows a friendly fallback.
     """
 
-    st.markdown("""
-    <div style="background:rgba(124,58,237,0.07);border:1px solid rgba(124,58,237,0.18);
-                border-radius:16px;padding:16px 20px;margin-bottom:16px;
-                font-family:'DM Sans',sans-serif;font-size:0.85rem;
-                color:rgba(255,255,255,0.55);line-height:1.8;">
-        🎥 <strong style="color:rgba(255,255,255,0.8)">Live Face Scan</strong> —
-        your camera detects facial emotions in real time.<br>
-        Click <strong style="color:#c4b5fd">Start Scan</strong>, hold for 5 seconds,
-        then click <strong style="color:#c4b5fd">Analyze</strong>.
-        No video is stored or sent anywhere.
-    </div>
-    """, unsafe_allow_html=True)
+    # ── Fallback: dependencies not installed ────────────────
+    if not _FACE_SCAN_AVAILABLE:
+        st.markdown("""
+        <div style="background:rgba(124,58,237,0.07);border:1px solid rgba(124,58,237,0.18);
+                    border-radius:16px;padding:24px 24px;margin-bottom:16px;
+                    font-family:'DM Sans',sans-serif;text-align:center;">
+            <div style="font-size:2.5rem;margin-bottom:12px;">📷</div>
+            <div style="font-family:'Syne',sans-serif;font-weight:700;font-size:1.05rem;
+                        color:white;margin-bottom:10px;">
+                Live Face Scan — Not Available
+            </div>
+            <div style="font-size:0.85rem;color:rgba(255,255,255,0.5);line-height:1.8;">
+                Face scanning requires additional packages
+                (<code style="color:#c4b5fd">fer</code>,
+                 <code style="color:#c4b5fd">streamlit-webrtc</code>,
+                 <code style="color:#c4b5fd">opencv-python-headless</code>)
+                that are not available in this deployment.<br><br>
+                👉 Use the <strong style="color:#c4b5fd">✍️ Analyze Text</strong> tab instead —
+                it works everywhere and uses the same AI model!
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
 
-    # ── Check if FER is available ────────────────────────────
+        st.markdown("""
+        <div style="background:rgba(56,189,248,0.06);border:1px solid rgba(56,189,248,0.15);
+                    border-radius:14px;padding:14px 18px;
+                    font-family:'DM Sans',sans-serif;font-size:0.8rem;
+                    color:rgba(255,255,255,0.45);line-height:1.8;">
+            💡 <strong style="color:#38bdf8">Run locally for face scan:</strong><br>
+            <code style="color:rgba(255,255,255,0.6)">pip install fer streamlit-webrtc opencv-python-headless av</code><br>
+            Then run: <code style="color:rgba(255,255,255,0.6)">streamlit run streamlit_app.py</code>
+        </div>
+        """, unsafe_allow_html=True)
+        return
+
+    # ── Check if FER detector loaded ────────────────────────
     if _cached_detector is None:
         err = get_fer_load_error() or "Unknown error"
         st.error(
@@ -130,6 +164,19 @@ def render_face_scan_tab():
         </div>
         """, unsafe_allow_html=True)
         return    # ← Don't render the WebRTC streamer at all
+
+    st.markdown("""
+    <div style="background:rgba(124,58,237,0.07);border:1px solid rgba(124,58,237,0.18);
+                border-radius:16px;padding:16px 20px;margin-bottom:16px;
+                font-family:'DM Sans',sans-serif;font-size:0.85rem;
+                color:rgba(255,255,255,0.55);line-height:1.8;">
+        🎥 <strong style="color:rgba(255,255,255,0.8)">Live Face Scan</strong> —
+        your camera detects facial emotions in real time.<br>
+        Click <strong style="color:#c4b5fd">Start Scan</strong>, hold for 5 seconds,
+        then click <strong style="color:#c4b5fd">Analyze</strong>.
+        No video is stored or sent anywhere.
+    </div>
+    """, unsafe_allow_html=True)
 
     # Init session keys
     for k, v in {
