@@ -1076,11 +1076,30 @@ elif st.session_state.page == "nearby":
     # ── Results ─────────────────────────────────────────────
     places  = st.session_state.nearby_places
     sel_idx = st.session_state.get("selected_place_idx", None)
-    lat     = st.session_state.user_lat or 28.6139
-    lng     = st.session_state.user_lng or 77.2090
 
+    lat = st.session_state.user_lat or 28.6139
+    lng = st.session_state.user_lng or 77.2090
+
+    # ── MAP — ALWAYS SHOW ─────────────────────────────────
+    st.write("")
+
+    map_html = build_map_html(
+        lat,
+        lng,
+        places,
+        sel_idx
+    )
+
+    components.html(
+        map_html,
+        height=420
+    )
+
+    # ── Results ────────────────────────────────────────────
     if places:
+
         st.write("")
+
         st.markdown(
             f'<div class="section-label">'
             f'✅ {len(places)} places found within {radius_km} km'
@@ -1088,115 +1107,203 @@ elif st.session_state.page == "nearby":
             unsafe_allow_html=True
         )
 
-        # Map
-        map_html = build_map_html(lat, lng, places, sel_idx)
-        components.html(map_html, height=420)
-
         st.write("")
+
         st.markdown(
-            '<div class="section-label">Tap a card to highlight on map</div>',
+            '<div class="section-label">'
+            'Tap a card to highlight on map'
+            '</div>',
             unsafe_allow_html=True
         )
 
-        # Place cards 2 per row
+        # ── Place cards 2 per row ──────────────────────────
         for i in range(0, len(places), 2):
+
             row = st.columns(2)
+
             for j, col in enumerate(row):
+
                 idx = i + j
+
                 if idx >= len(places):
                     break
-                p      = places[idx]
+
+                p = places[idx]
+
                 is_sel = (idx == sel_idx)
-                bg     = "rgba(124,58,237,0.15)" if is_sel \
-                         else "rgba(255,255,255,0.04)"
-                border = "rgba(124,58,237,0.5)" if is_sel \
-                         else "rgba(255,255,255,0.07)"
+
+                bg = (
+                    "rgba(124,58,237,0.15)"
+                    if is_sel
+                    else "rgba(255,255,255,0.04)"
+                )
+
+                border = (
+                    "rgba(124,58,237,0.5)"
+                    if is_sel
+                    else "rgba(255,255,255,0.07)"
+                )
 
                 with col:
-                    st.markdown(f"""
-                    <div style="background:{bg};border:1px solid {border};
-                                border-radius:14px;padding:14px 16px;
-                                margin-bottom:4px;min-height:110px;">
-                        <div style="font-family:'Syne',sans-serif;font-weight:700;
-                                    font-size:0.85rem;color:white;margin-bottom:4px;">
-                            {p['name']}
-                        </div>
-                        <div style="font-size:0.72rem;
-                                    color:rgba(255,255,255,0.4);line-height:1.7;">
-                            🏷️ {p['type']}<br>
-                            📍 {p['dist_km']} km away<br>
-                            {('📞 ' + p['phone']) if p['phone'] else ''}
-                        </div>
-                    </div>
-                    """, unsafe_allow_html=True)
 
-                    if st.button("📍 Show on map",
-                                 key=f"sel_{idx}",
-                                 use_container_width=True):
+                    st.markdown(
+                        f"""
+                        <div style="
+                            background:{bg};
+                            border:1px solid {border};
+                            border-radius:14px;
+                            padding:14px 16px;
+                            margin-bottom:4px;
+                            min-height:130px;
+                        ">
+
+                            <div style="
+                                font-family:'Syne',sans-serif;
+                                font-weight:700;
+                                font-size:0.85rem;
+                                color:white;
+                                margin-bottom:6px;
+                            ">
+                                {p['name']}
+                            </div>
+
+                            <div style="
+                                font-size:0.72rem;
+                                color:rgba(255,255,255,0.4);
+                                line-height:1.7;
+                            ">
+                                🏷️ {p['type']}<br>
+                                📍 {p['dist_km']} km away<br>
+                                {('📞 ' + p['phone']) if p['phone'] else ''}
+                            </div>
+
+                        </div>
+                        """,
+                        unsafe_allow_html=True
+                    )
+
+                    if st.button(
+                        "📍 Show on map",
+                        key=f"sel_{idx}",
+                        use_container_width=True
+                    ):
                         st.session_state.selected_place_idx = idx
                         st.rerun()
 
-        # Directions for selected place
+        # ── Directions for selected place ─────────────────
         if sel_idx is not None and sel_idx < len(places):
+
             sel = places[sel_idx]
+
             st.write("")
+
             st.markdown(
                 '<div class="section-label">Get directions</div>',
                 unsafe_allow_html=True
             )
+
             d1, d2 = st.columns(2)
-            gmap = (f"https://www.google.com/maps/dir/?api=1"
-                    f"&origin={lat},{lng}"
-                    f"&destination={sel['lat']},{sel['lng']}")
-            osm  = (f"https://www.openstreetmap.org/directions?"
-                    f"from={lat},{lng}&to={sel['lat']},{sel['lng']}")
+
+            gmap = (
+                f"https://www.google.com/maps/dir/?api=1"
+                f"&origin={lat},{lng}"
+                f"&destination={sel['lat']},{sel['lng']}"
+            )
+
+            osm = (
+                f"https://www.openstreetmap.org/directions?"
+                f"from={lat},{lng}"
+                f"&to={sel['lat']},{sel['lng']}"
+            )
+
             with d1:
-                st.markdown(f"""
-                <a href="{gmap}" target="_blank"
-                   style="display:block;
-                          background:linear-gradient(135deg,#7c3aed,#4f46e5);
-                          color:white;text-decoration:none;border-radius:12px;
-                          padding:13px;text-align:center;
-                          font-family:'Syne',sans-serif;
-                          font-weight:700;font-size:0.85rem;">
-                    🗺️ Google Maps
-                </a>
-                """, unsafe_allow_html=True)
+
+                st.markdown(
+                    f"""
+                    <a href="{gmap}" target="_blank"
+                       style="
+                           display:block;
+                           background:linear-gradient(
+                               135deg,#7c3aed,#4f46e5
+                           );
+                           color:white;
+                           text-decoration:none;
+                           border-radius:12px;
+                           padding:13px;
+                           text-align:center;
+                           font-family:'Syne',sans-serif;
+                           font-weight:700;
+                           font-size:0.85rem;
+                       ">
+                        🗺️ Google Maps
+                    </a>
+                    """,
+                    unsafe_allow_html=True
+                )
+
             with d2:
-                st.markdown(f"""
-                <a href="{osm}" target="_blank"
-                   style="display:block;
-                          background:rgba(255,255,255,0.06);
-                          border:1px solid rgba(255,255,255,0.12);
-                          color:rgba(255,255,255,0.8);text-decoration:none;
-                          border-radius:12px;padding:13px;text-align:center;
-                          font-family:'Syne',sans-serif;
-                          font-weight:600;font-size:0.85rem;">
-                    🌍 OpenStreetMap
-                </a>
-                """, unsafe_allow_html=True)
 
-    elif not places and not search_type:
-        st.markdown("""
-        <div style="text-align:center;padding:48px 20px;
-                    color:rgba(255,255,255,0.25);
-                    font-family:'DM Sans',sans-serif;
-                    font-size:0.9rem;line-height:2.2;">
-            🏥<br>
-            Set your location above then click<br>
-            <strong style="color:rgba(255,255,255,0.4)">Search All</strong>
-            to find nearby hospitals and clinics
-        </div>
-        """, unsafe_allow_html=True)
+                st.markdown(
+                    f"""
+                    <a href="{osm}" target="_blank"
+                       style="
+                           display:block;
+                           background:rgba(255,255,255,0.06);
+                           border:1px solid rgba(255,255,255,0.12);
+                           color:rgba(255,255,255,0.8);
+                           text-decoration:none;
+                           border-radius:12px;
+                           padding:13px;
+                           text-align:center;
+                           font-family:'Syne',sans-serif;
+                           font-weight:600;
+                           font-size:0.85rem;
+                       ">
+                        🌍 OpenStreetMap
+                    </a>
+                    """,
+                    unsafe_allow_html=True
+                )
 
+    else:
+
+        # ── No places found / no search yet ───────────────
+        st.markdown(
+            """
+            <div style="
+                text-align:center;
+                padding:35px 20px;
+                color:rgba(255,255,255,0.3);
+                font-family:'DM Sans',sans-serif;
+                font-size:0.9rem;
+                line-height:2;
+            ">
+
+                🏥<br>
+
+                <strong style="color:rgba(255,255,255,0.5);">
+                    No places found yet
+                </strong>
+
+                <br>
+
+                Set your location above and search for
+                nearby hospitals or doctors.
+
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+
+    # ── Emergency ──────────────────────────────────────────
     st.write("")
     st.divider()
+
     st.error(
         "🚨 Emergency: **112** · "
         "iCall: **9152987821** · "
         "Tele MANAS: **14416** *(free 24/7)*"
     )
-
 
 # ══════════════════════════════════════════════════════════
 # PAGE: ANALYZE
