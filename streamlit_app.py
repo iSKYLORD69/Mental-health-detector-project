@@ -74,7 +74,6 @@ st.markdown("""
     50%     { opacity:0.3; }
 }
 
-/* ── Topbar ── */
 .topbar {
     display: flex;
     align-items: center;
@@ -96,11 +95,6 @@ st.markdown("""
     -webkit-text-fill-color: transparent;
     background-clip: text;
     white-space: nowrap;
-}
-.topbar-nav {
-    display: flex;
-    align-items: center;
-    gap: 6px;
 }
 .nav-pill {
     padding: 7px 16px;
@@ -129,14 +123,7 @@ st.markdown("""
     border-color: rgba(255,255,255,0.15);
     color: rgba(255,255,255,0.75);
 }
-.nav-pill.mello-pill {
-    background: linear-gradient(135deg, rgba(124,58,237,0.3), rgba(56,189,248,0.2));
-    border-color: rgba(124,58,237,0.4);
-    color: #c4b5fd;
-    animation: bob 3s ease-in-out infinite;
-}
 
-/* ── Buttons ── */
 .stButton > button[kind="secondary"] {
     background: rgba(255,255,255,0.04) !important;
     border: 1px solid rgba(255,255,255,0.1) !important;
@@ -173,7 +160,7 @@ st.markdown("""
     transform: translateY(-2px) !important;
     box-shadow: 0 8px 28px rgba(124,58,237,0.5) !important;
 }
-/* ── Textarea ── */
+
 .stTextArea > label {
     color: rgba(255,255,255,0.3) !important;
     font-size: 0.75rem !important;
@@ -199,7 +186,6 @@ st.markdown("""
     color: rgba(255,255,255,0.2) !important;
 }
 
-/* ── Metrics ── */
 div[data-testid="metric-container"] {
     background: rgba(255,255,255,0.04) !important;
     border: 1px solid rgba(255,255,255,0.08) !important;
@@ -227,7 +213,6 @@ div[data-testid="metric-container"] div[data-testid="stMetricValue"] {
     font-weight: 800 !important;
 }
 
-/* ── Alerts ── */
 .stAlert {
     border-radius: 14px !important;
     border-left-width: 3px !important;
@@ -235,7 +220,6 @@ div[data-testid="metric-container"] div[data-testid="stMetricValue"] {
     font-family: 'DM Sans', sans-serif !important;
 }
 
-/* ── Chat ── */
 div[data-testid="stChatMessage"] {
     background: rgba(255,255,255,0.03) !important;
     border: 1px solid rgba(255,255,255,0.07) !important;
@@ -258,14 +242,12 @@ div[data-testid="stChatInput"] textarea {
     font-family: 'DM Sans', sans-serif !important;
 }
 
-/* ── Misc ── */
 hr { border-color: rgba(255,255,255,0.06) !important; margin: 16px 0 !important; }
 .stSpinner > div { border-top-color: #7c3aed !important; }
 .stCaption p { color: rgba(255,255,255,0.28) !important; font-size:0.75rem !important; }
 p, li { color: rgba(255,255,255,0.7); font-family:'DM Sans',sans-serif; line-height:1.75; }
 h1,h2,h3 { font-family:'Syne',sans-serif !important; color:white !important; }
 
-/* ── Custom components ── */
 .hero-title {
     font-family: 'Syne', sans-serif;
     font-size: clamp(2.2rem, 5vw, 3.2rem);
@@ -363,11 +345,6 @@ h1,h2,h3 { font-family:'Syne',sans-serif !important; color:white !important; }
 }
 .pill-red   { display:inline-block; margin:3px; padding:5px 13px; border-radius:20px; font-size:12px; font-weight:500; background:rgba(239,68,68,0.12); border:1px solid rgba(239,68,68,0.28); color:#fca5a5; }
 .pill-green { display:inline-block; margin:3px; padding:5px 13px; border-radius:20px; font-size:12px; font-weight:500; background:rgba(52,211,153,0.1); border:1px solid rgba(52,211,153,0.22); color:#6ee7b7; }
-.badge-c { display:inline-block; background:rgba(239,68,68,0.12); border:1px solid rgba(239,68,68,0.3); color:#fca5a5; padding:4px 14px; border-radius:20px; font-size:11px; font-family:'Syne',sans-serif; font-weight:700; }
-.badge-w { display:inline-block; background:rgba(245,158,11,0.12); border:1px solid rgba(245,158,11,0.3); color:#fcd34d; padding:4px 14px; border-radius:20px; font-size:11px; font-family:'Syne',sans-serif; font-weight:700; }
-.badge-g { display:inline-block; background:rgba(52,211,153,0.12); border:1px solid rgba(52,211,153,0.3); color:#6ee7b7; padding:4px 14px; border-radius:20px; font-size:11px; font-family:'Syne',sans-serif; font-weight:700; }
-.tag { display:inline-block; background:rgba(124,58,237,0.12); border:1px solid rgba(124,58,237,0.22); border-radius:6px; padding:3px 10px; font-size:0.7rem; color:#c4b5fd; font-family:'Syne',sans-serif; font-weight:700; letter-spacing:0.05em; margin:3px 2px; }
-.info-card { background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.07); border-radius:14px; padding:14px 18px; margin-bottom:10px; }
 .footer-txt { text-align:center; font-size:0.65rem; color:rgba(255,255,255,0.15); font-family:'Syne',sans-serif; letter-spacing:0.14em; text-transform:uppercase; padding:12px 0; }
 </style>
 """, unsafe_allow_html=True)
@@ -394,10 +371,7 @@ def load_deepseek():
     key = os.getenv("DEEPSEEK_API_KEY") or st.secrets.get("DEEPSEEK_API_KEY", None)
     if not key:
         return None
-    return OpenAI(
-        api_key=key,
-        base_url="https://api.deepseek.com",
-    )
+    return OpenAI(api_key=key, base_url="https://api.deepseek.com")
 
 deepseek_client = load_deepseek()
 
@@ -415,7 +389,7 @@ def load_groq():
 
 groq_client = load_groq()
 
-DEEPSEEK_MODEL      = "deepseek-chat"          # V3 — warm & fast
+DEEPSEEK_MODEL      = "deepseek-chat"
 GROQ_FALLBACK_MODEL = "llama-3.3-70b-versatile"
 
 
@@ -454,9 +428,13 @@ def geocode_city_cached(name: str):
     return _geocode_city_raw(name)
 
 
-@st.cache_data(ttl=300, show_spinner=False)
+@st.cache_data(ttl=120, show_spinner=False)
 def get_nearby_places_cached(lat: float, lng: float, stype: str, radius: int):
-    return _get_nearby_places_raw(lat, lng, stype, radius)
+    result = _get_nearby_places_raw(lat, lng, stype, radius)
+    # Don't cache empty results — likely a transient failure
+    if not result:
+        get_nearby_places_cached.clear()
+    return result
 
 
 # ══════════════════════════════════════════════════════════
@@ -497,7 +475,6 @@ def _messages_for(messages, mood, ctx):
 def mello_reply(messages, mood, ctx):
     msgs = _messages_for(messages, mood, ctx)
 
-    # ── Primary: DeepSeek V3 ─────────────────────────────
     if deepseek_client:
         try:
             r = deepseek_client.chat.completions.create(
@@ -513,7 +490,6 @@ def mello_reply(messages, mood, ctx):
         except Exception as e:
             print(f"[DeepSeek] error: {e}")
 
-    # ── Fallback: Groq ────────────────────────────────────
     if groq_client:
         try:
             r = groq_client.chat.completions.create(
@@ -529,7 +505,6 @@ def mello_reply(messages, mood, ctx):
             if "429" in err or "quota" in err:
                 return "I need a breath — try again in a moment 💙\n\n📞 iCall: 9152987821"
 
-    # ── Both failed ───────────────────────────────────────
     return "Something went wrong 💙 Please try again.\n\n📞 iCall: 9152987821"
 
 
@@ -590,34 +565,25 @@ def render_topbar():
     nc1, nc2, nc3, nc4 = st.columns(4)
 
     with nc1:
-        if st.button(
-            "🔍 Analyze Text",
-            key="top_analyze",
-            use_container_width=True,
-            type="primary" if a_analyze else "secondary"
-        ):
+        if st.button("🔍 Analyze Text", key="top_analyze",
+                     use_container_width=True,
+                     type="primary" if a_analyze else "secondary"):
             st.session_state.page = "analyze"
             st.rerun()
 
     with nc2:
         btn_label = "📊 Last Results" if has_results else "📊 No results yet"
-        if st.button(
-            btn_label,
-            key="top_results",
-            use_container_width=True,
-            type="primary" if a_results else "secondary",
-            disabled=not has_results
-        ):
+        if st.button(btn_label, key="top_results",
+                     use_container_width=True,
+                     type="primary" if a_results else "secondary",
+                     disabled=not has_results):
             st.session_state.page = "results"
             st.rerun()
 
     with nc3:
-        if st.button(
-            "🫧 Mello",
-            key="top_mello",
-            use_container_width=True,
-            type="primary" if a_mello else "secondary"
-        ):
+        if st.button("🫧 Mello", key="top_mello",
+                     use_container_width=True,
+                     type="primary" if a_mello else "secondary"):
             if not a_mello:
                 mood = st.session_state.detected_mood or "normal"
                 open_mello(mood, st.session_state.user_text_context,
@@ -625,12 +591,9 @@ def render_topbar():
                 st.rerun()
 
     with nc4:
-        if st.button(
-            "🏥 Nearby Help",
-            key="top_nearby",
-            use_container_width=True,
-            type="primary" if a_nearby else "secondary"
-        ):
+        if st.button("🏥 Nearby Help", key="top_nearby",
+                     use_container_width=True,
+                     type="primary" if a_nearby else "secondary"):
             st.session_state.page = "nearby"
             st.rerun()
 
@@ -883,7 +846,6 @@ elif st.session_state.page == "nearby":
 
     DEFAULT_LAT, DEFAULT_LNG = 28.6139, 77.2090   # New Delhi
 
-    # ── Guarantee a location so the map ALWAYS renders ──────
     if st.session_state.user_lat is None:
         st.session_state.user_lat = DEFAULT_LAT
         st.session_state.user_lng = DEFAULT_LNG
@@ -905,7 +867,6 @@ elif st.session_state.page == "nearby":
     # ── AI Recommendation banner ────────────────────────────
     mood = st.session_state.detected_mood
     if mood and mood.lower() != "normal":
-
         mood_advice = {
             "depression": (
                 "🔵 Based on your scan, we recommend consulting a **psychiatrist or psychologist**. "
@@ -929,7 +890,6 @@ elif st.session_state.page == "nearby":
                 "**psychiatrist or a hospital with a neurology/psychiatry department**."
             ),
         }
-
         advice = mood_advice.get(
             mood.lower(),
             "We recommend consulting a mental health professional nearby."
@@ -990,7 +950,7 @@ elif st.session_state.page == "nearby":
 
     st.divider()
 
-    # ── Location controls (collapsed so map is above the fold) ──
+    # ── Location controls ───────────────────────────────────
     with st.expander("📍 Change Location", expanded=False):
         tab1, tab2 = st.tabs(["🌐 Auto-detect", "✏️ Manual input"])
 
@@ -1123,7 +1083,6 @@ elif st.session_state.page == "nearby":
     if btn_doc:  search_type = "doctor"
     if btn_both: search_type = "both"
 
-    # Auto-search on first visit or when location changes
     loc_key = f"{st.session_state.user_lat:.4f},{st.session_state.user_lng:.4f}"
     auto_search = (
         search_type is None
@@ -1133,7 +1092,7 @@ elif st.session_state.page == "nearby":
         search_type = "both"
         st.session_state._nearby_loc_key = loc_key
 
-    # ── Run search — never raises, never hides the map ──────
+    # ── Run search ──────────────────────────────────────────
     if search_type and st.session_state.user_lat is not None:
         with st.spinner(f"Searching OpenStreetMap within {radius_km} km..."):
             try:
@@ -1151,7 +1110,34 @@ elif st.session_state.page == "nearby":
                 st.session_state.nearby_places = []
                 st.session_state.nearby_error = str(e)
 
-    # ── Map — ALWAYS rendered from here down ────────────────
+    # ── Manual test button ──────────────────────────────────
+    if st.button("🧪 Run live Overpass test", key="overpass_test"):
+        with st.spinner("Querying Overpass directly..."):
+            test_places = _get_nearby_places_raw(
+                st.session_state.user_lat,
+                st.session_state.user_lng,
+                "both",
+                10000,   # 10 km for testing
+            )
+        st.write(f"**Direct query returned {len(test_places)} places**")
+        if test_places:
+            for p in test_places[:5]:
+                st.write(f"• {p['name']} — {p['dist_km']} km ({p['type']})")
+        else:
+            st.warning("Overpass returned 0 results. Check terminal for `[Overpass]` logs.")
+
+    # ── Debug panel ─────────────────────────────────────────
+    with st.expander("🔧 Debug: search results", expanded=False):
+        st.write("**Search type:**", search_type or "(none)")
+        st.write("**Radius (m):**", radius_km * 1000)
+        st.write("**Lat,Lng:**", st.session_state.user_lat, st.session_state.user_lng)
+        st.write("**Places returned:**", len(st.session_state.nearby_places or []))
+        if st.session_state.nearby_places:
+            st.json(st.session_state.nearby_places[:3])
+        if st.session_state.nearby_error:
+            st.error(st.session_state.nearby_error)
+
+    # ── Map — ALWAYS rendered ───────────────────────────────
     lat = st.session_state.user_lat
     lng = st.session_state.user_lng
     places  = st.session_state.nearby_places or []
@@ -1161,7 +1147,6 @@ elif st.session_state.page == "nearby":
     st.markdown('<div class="section-label">🗺️ Map</div>',
                 unsafe_allow_html=True)
 
-    # Status banner above the map
     if st.session_state.nearby_error:
         st.warning(
             f"⚠️ Couldn't reach OpenStreetMap servers "
@@ -1173,9 +1158,10 @@ elif st.session_state.page == "nearby":
     else:
         st.info("📍 Showing your location. Press a search button above to find help nearby.")
 
-    # Render map — wrapped so any failure still leaves the page usable
     try:
         map_html = build_map_html(lat, lng, places, sel_idx)
+        # Unique comment forces iframe re-render when places change
+        map_html += f"\n<!-- v={len(places)}-{sel_idx} -->"
         components.html(map_html, height=440)
     except Exception as e:
         st.error(f"Map could not render, but the list below is still usable. ({e})")
@@ -1223,7 +1209,6 @@ elif st.session_state.page == "nearby":
                         st.session_state.selected_place_idx = idx
                         st.rerun()
 
-        # Directions for selected place
         if sel_idx is not None and sel_idx < len(places):
             sel = places[sel_idx]
             st.write("")
