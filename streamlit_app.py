@@ -2,7 +2,7 @@ import streamlit as st
 import plotly.graph_objects as go
 import joblib
 import os
-from openai import OpenAI
+from groq import Groq
 from dotenv import load_dotenv
 import time
 import streamlit.components.v1 as components
