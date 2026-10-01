@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 import time
 import streamlit.components.v1 as components
 from nearby import geocode_city, get_nearby_places, build_map_html, build_location_detector_html
-from face_scan_component import render_face_scan_tab
+#from face_scan_component import render_face_scan_tab
 
 load_dotenv()
 
@@ -1073,237 +1073,270 @@ elif st.session_state.page == "nearby":
         st.session_state.selected_place_idx = None
         st.rerun()
 
-    # ── Results ─────────────────────────────────────────────
-    places  = st.session_state.nearby_places
-    sel_idx = st.session_state.get("selected_place_idx", None)
+# ── Results ─────────────────────────────────────────────
+places = st.session_state.nearby_places
+sel_idx = st.session_state.get("selected_place_idx", None)
 
-    lat = st.session_state.user_lat or 28.6139
-    lng = st.session_state.user_lng or 77.2090
+lat = st.session_state.user_lat or 28.6139
+lng = st.session_state.user_lng or 77.2090
 
-    # ── MAP — ALWAYS SHOW ─────────────────────────────────
+
+# ══════════════════════════════════════════════════════════
+# MAP — ALWAYS VISIBLE
+# ══════════════════════════════════════════════════════════
+
+st.write("")
+
+map_html = build_map_html(
+    lat,
+    lng,
+    places,
+    sel_idx
+)
+
+components.html(
+    map_html,
+    height=420
+)
+
+
+# ══════════════════════════════════════════════════════════
+# SEARCH RESULTS
+# ══════════════════════════════════════════════════════════
+
+if places:
+
     st.write("")
 
-    map_html = build_map_html(
-        lat,
-        lng,
-        places,
-        sel_idx
+    st.markdown(
+        f'<div class="section-label">'
+        f'✅ {len(places)} places found within {radius_km} km'
+        f'</div>',
+        unsafe_allow_html=True
     )
 
-    components.html(
-        map_html,
-        height=420
+    st.write("")
+
+    st.markdown(
+        '<div class="section-label">'
+        'Tap a card to highlight on map'
+        '</div>',
+        unsafe_allow_html=True
     )
 
-    # ── Results ────────────────────────────────────────────
-    if places:
 
-        st.write("")
+    # ── Place cards ───────────────────────────────────────
+    for i in range(0, len(places), 2):
 
-        st.markdown(
-            f'<div class="section-label">'
-            f'✅ {len(places)} places found within {radius_km} km'
-            f'</div>',
-            unsafe_allow_html=True
-        )
+        row = st.columns(2)
 
-        st.write("")
+        for j, col in enumerate(row):
 
-        st.markdown(
-            '<div class="section-label">'
-            'Tap a card to highlight on map'
-            '</div>',
-            unsafe_allow_html=True
-        )
+            idx = i + j
 
-        # ── Place cards 2 per row ──────────────────────────
-        for i in range(0, len(places), 2):
+            if idx >= len(places):
+                break
 
-            row = st.columns(2)
+            p = places[idx]
 
-            for j, col in enumerate(row):
+            is_sel = (idx == sel_idx)
 
-                idx = i + j
+            bg = (
+                "rgba(124,58,237,0.15)"
+                if is_sel
+                else "rgba(255,255,255,0.04)"
+            )
 
-                if idx >= len(places):
-                    break
+            border = (
+                "rgba(124,58,237,0.5)"
+                if is_sel
+                else "rgba(255,255,255,0.07)"
+            )
 
-                p = places[idx]
+            with col:
 
-                is_sel = (idx == sel_idx)
+                st.markdown(
+                    f"""
+                    <div style="
+                        background:{bg};
+                        border:1px solid {border};
+                        border-radius:14px;
+                        padding:14px 16px;
+                        margin-bottom:4px;
+                        min-height:130px;
+                    ">
 
-                bg = (
-                    "rgba(124,58,237,0.15)"
-                    if is_sel
-                    else "rgba(255,255,255,0.04)"
-                )
-
-                border = (
-                    "rgba(124,58,237,0.5)"
-                    if is_sel
-                    else "rgba(255,255,255,0.07)"
-                )
-
-                with col:
-
-                    st.markdown(
-                        f"""
                         <div style="
-                            background:{bg};
-                            border:1px solid {border};
-                            border-radius:14px;
-                            padding:14px 16px;
-                            margin-bottom:4px;
-                            min-height:130px;
+                            font-family:'Syne',sans-serif;
+                            font-weight:700;
+                            font-size:0.85rem;
+                            color:white;
+                            margin-bottom:6px;
                         ">
-
-                            <div style="
-                                font-family:'Syne',sans-serif;
-                                font-weight:700;
-                                font-size:0.85rem;
-                                color:white;
-                                margin-bottom:6px;
-                            ">
-                                {p['name']}
-                            </div>
-
-                            <div style="
-                                font-size:0.72rem;
-                                color:rgba(255,255,255,0.4);
-                                line-height:1.7;
-                            ">
-                                🏷️ {p['type']}<br>
-                                📍 {p['dist_km']} km away<br>
-                                {('📞 ' + p['phone']) if p['phone'] else ''}
-                            </div>
-
+                            {p['name']}
                         </div>
-                        """,
-                        unsafe_allow_html=True
-                    )
 
-                    if st.button(
-                        "📍 Show on map",
-                        key=f"sel_{idx}",
-                        use_container_width=True
-                    ):
-                        st.session_state.selected_place_idx = idx
-                        st.rerun()
+                        <div style="
+                            font-size:0.72rem;
+                            color:rgba(255,255,255,0.4);
+                            line-height:1.7;
+                        ">
+                            🏷️ {p['type']}<br>
+                            📍 {p['dist_km']} km away<br>
+                            {('📞 ' + p['phone']) if p['phone'] else ''}
+                        </div>
 
-        # ── Directions for selected place ─────────────────
-        if sel_idx is not None and sel_idx < len(places):
+                    </div>
+                    """,
+                    unsafe_allow_html=True
+                )
 
-            sel = places[sel_idx]
+                if st.button(
+                    "📍 Show on map",
+                    key=f"sel_{idx}",
+                    use_container_width=True
+                ):
+                    st.session_state.selected_place_idx = idx
+                    st.rerun()
 
-            st.write("")
+
+    # ══════════════════════════════════════════════════════
+    # DIRECTIONS
+    # ══════════════════════════════════════════════════════
+
+    if sel_idx is not None and sel_idx < len(places):
+
+        sel = places[sel_idx]
+
+        st.write("")
+
+        st.markdown(
+            '<div class="section-label">Get directions</div>',
+            unsafe_allow_html=True
+        )
+
+        d1, d2 = st.columns(2)
+
+
+        # Google Maps
+        gmap = (
+            f"https://www.google.com/maps/dir/?api=1"
+            f"&origin={lat},{lng}"
+            f"&destination={sel['lat']},{sel['lng']}"
+        )
+
+
+        # OpenStreetMap
+        osm = (
+            f"https://www.openstreetmap.org/directions?"
+            f"from={lat},{lng}"
+            f"&to={sel['lat']},{sel['lng']}"
+        )
+
+
+        with d1:
 
             st.markdown(
-                '<div class="section-label">Get directions</div>',
+                f"""
+                <a href="{gmap}" target="_blank"
+                   style="
+                       display:block;
+                       background:
+                           linear-gradient(
+                               135deg,
+                               #7c3aed,
+                               #4f46e5
+                           );
+                       color:white;
+                       text-decoration:none;
+                       border-radius:12px;
+                       padding:13px;
+                       text-align:center;
+                       font-family:'Syne',sans-serif;
+                       font-weight:700;
+                       font-size:0.85rem;
+                   ">
+                    🗺️ Google Maps
+                </a>
+                """,
                 unsafe_allow_html=True
             )
 
-            d1, d2 = st.columns(2)
 
-            gmap = (
-                f"https://www.google.com/maps/dir/?api=1"
-                f"&origin={lat},{lng}"
-                f"&destination={sel['lat']},{sel['lng']}"
+        with d2:
+
+            st.markdown(
+                f"""
+                <a href="{osm}" target="_blank"
+                   style="
+                       display:block;
+                       background:rgba(255,255,255,0.06);
+                       border:1px solid rgba(255,255,255,0.12);
+                       color:rgba(255,255,255,0.8);
+                       text-decoration:none;
+                       border-radius:12px;
+                       padding:13px;
+                       text-align:center;
+                       font-family:'Syne',sans-serif;
+                       font-weight:600;
+                       font-size:0.85rem;
+                   ">
+                    🌍 OpenStreetMap
+                </a>
+                """,
+                unsafe_allow_html=True
             )
 
-            osm = (
-                f"https://www.openstreetmap.org/directions?"
-                f"from={lat},{lng}"
-                f"&to={sel['lat']},{sel['lng']}"
-            )
 
-            with d1:
+# ══════════════════════════════════════════════════════════
+# NO RESULTS
+# ══════════════════════════════════════════════════════════
 
-                st.markdown(
-                    f"""
-                    <a href="{gmap}" target="_blank"
-                       style="
-                           display:block;
-                           background:linear-gradient(
-                               135deg,#7c3aed,#4f46e5
-                           );
-                           color:white;
-                           text-decoration:none;
-                           border-radius:12px;
-                           padding:13px;
-                           text-align:center;
-                           font-family:'Syne',sans-serif;
-                           font-weight:700;
-                           font-size:0.85rem;
-                       ">
-                        🗺️ Google Maps
-                    </a>
-                    """,
-                    unsafe_allow_html=True
-                )
+else:
 
-            with d2:
+    st.markdown(
+        """
+        <div style="
+            text-align:center;
+            padding:30px 20px;
+            color:rgba(255,255,255,0.3);
+            font-family:'DM Sans',sans-serif;
+            font-size:0.9rem;
+            line-height:2;
+        ">
 
-                st.markdown(
-                    f"""
-                    <a href="{osm}" target="_blank"
-                       style="
-                           display:block;
-                           background:rgba(255,255,255,0.06);
-                           border:1px solid rgba(255,255,255,0.12);
-                           color:rgba(255,255,255,0.8);
-                           text-decoration:none;
-                           border-radius:12px;
-                           padding:13px;
-                           text-align:center;
-                           font-family:'Syne',sans-serif;
-                           font-weight:600;
-                           font-size:0.85rem;
-                       ">
-                        🌍 OpenStreetMap
-                    </a>
-                    """,
-                    unsafe_allow_html=True
-                )
+            🏥<br>
 
-    else:
-
-        # ── No places found / no search yet ───────────────
-        st.markdown(
-            """
-            <div style="
-                text-align:center;
-                padding:35px 20px;
-                color:rgba(255,255,255,0.3);
-                font-family:'DM Sans',sans-serif;
-                font-size:0.9rem;
-                line-height:2;
+            <strong style="
+                color:rgba(255,255,255,0.5);
             ">
+                No places found yet
+            </strong>
 
-                🏥<br>
+            <br>
 
-                <strong style="color:rgba(255,255,255,0.5);">
-                    No places found yet
-                </strong>
+            Search for hospitals, clinics or doctors
+            to see them on the map.
 
-                <br>
-
-                Set your location above and search for
-                nearby hospitals or doctors.
-
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
-
-    # ── Emergency ──────────────────────────────────────────
-    st.write("")
-    st.divider()
-
-    st.error(
-        "🚨 Emergency: **112** · "
-        "iCall: **9152987821** · "
-        "Tele MANAS: **14416** *(free 24/7)*"
+        </div>
+        """,
+        unsafe_allow_html=True
     )
+
+
+# ══════════════════════════════════════════════════════════
+# EMERGENCY
+# ══════════════════════════════════════════════════════════
+
+st.write("")
+st.divider()
+
+st.error(
+    "🚨 Emergency: **112** · "
+    "iCall: **9152987821** · "
+    "Tele MANAS: **14416** *(free 24/7)*"
+)
+
 
 # ══════════════════════════════════════════════════════════
 # PAGE: ANALYZE
@@ -1324,63 +1357,111 @@ else:
     st.warning("A Tool for detecting mental health of a person by analyzing their text.")
     st.write("")
 
-    tab_text, tab_face = st.tabs(["✍️  Analyze Text", "📷  Live Face Scan"])
+    # ── Text Analysis ──────────────────────────────────────
+    st.markdown(
+        '<div class="section-label">Write your thoughts</div>',
+        unsafe_allow_html=True
+    )
 
-    with tab_text:
-        st.markdown('<div class="section-label">Or write your own</div>',
-                    unsafe_allow_html=True)
-        text_input = st.text_area(
-            label="",
-            height=160,
-            value=st.session_state.get("text_input", ""),
-            placeholder="How have you been feeling lately? Write freely — this is a safe space...",
-        )
-        st.write("")
-        if st.button("✦ Analyze Text", type="primary", use_container_width=True):
-            if not text_input.strip():
-                st.error("Please enter some text first.")
-                st.stop()
-            with st.spinner("Scanning for signals..."):
-                crisis_keywords = [ "suicide","suicidal","kill myself","end my life","want to die" ]
-                if any(keyword in text_input.lower() for keyword in crisis_keywords):
-                    pred = "suicidal"
-                    proba = model.predict_proba([text_input])[0]
-                else:
-                    pred  = model.predict([text_input])[0]
-                    proba = model.predict_proba([text_input])[0]
-                lbls  = model.classes_
-                sc    = {l: round(float(p),4) for l,p in zip(lbls,proba)}
-                conf  = round(float(max(proba)),4)
-            st.session_state.detected_mood     = pred
-            st.session_state.user_text_context = text_input
-            st.session_state.scores            = sc
-            st.session_state.confidence        = conf
-            st.session_state.scan_source       = "text"
-            st.session_state.total_scans      += 1
-            st.session_state.mood_history.append(pred)
-            if pred.lower() == "suicidal":
-                with st.spinner("Connecting you to Mello..."):
-                    time.sleep(1.2)
-                open_mello("suicidal", text_input, crisis=True)
-            else:
-                st.session_state.page = "results"
-            st.rerun()
+    text_input = st.text_area(
+        label="",
+        height=160,
+        value=st.session_state.get("text_input", ""),
+        placeholder="How have you been feeling lately? Write freely — this is a safe space...",
+    )
 
-    with tab_face:
-        render_face_scan_tab()
     st.write("")
 
+    if st.button("✦ Analyze Text", type="primary", use_container_width=True):
 
-    # Stats row
+        if not text_input.strip():
+            st.error("Please enter some text first.")
+            st.stop()
+
+        with st.spinner("Scanning for signals..."):
+
+            # Crisis keyword escalation
+            crisis_keywords = [
+                "suicide",
+                "suicidal",
+                "kill myself",
+                "end my life",
+                "want to die"
+            ]
+
+            if any(keyword in text_input.lower() for keyword in crisis_keywords):
+                pred = "suicidal"
+                proba = model.predict_proba([text_input])[0]
+            else:
+                pred = model.predict([text_input])[0]
+                proba = model.predict_proba([text_input])[0]
+
+            lbls = model.classes_
+            sc = {
+                l: round(float(p), 4)
+                for l, p in zip(lbls, proba)
+            }
+
+            conf = round(float(max(proba)), 4)
+
+        # ── Save results to session ────────────────────────
+        st.session_state.detected_mood = pred
+        st.session_state.user_text_context = text_input
+        st.session_state.scores = sc
+        st.session_state.confidence = conf
+        st.session_state.scan_source = "text"
+        st.session_state.total_scans += 1
+        st.session_state.mood_history.append(pred)
+
+        # ── Crisis flow ────────────────────────────────────
+        if pred.lower() == "suicidal":
+
+            with st.spinner("Connecting you to Mello..."):
+                time.sleep(1.2)
+
+            open_mello(
+                "suicidal",
+                text_input,
+                crisis=True
+            )
+
+        # ── Normal results flow ────────────────────────────
+        else:
+            st.session_state.page = "results"
+
+        st.rerun()
+
+    st.write("")
+
+    # ── Stats row ──────────────────────────────────────────
     if st.session_state.total_scans > 0:
+
         st.divider()
-        st.markdown('<div class="section-label">Session</div>', unsafe_allow_html=True)
+
+        st.markdown(
+            '<div class="section-label">Session</div>',
+            unsafe_allow_html=True
+        )
+
         s1, s2, s3 = st.columns(3)
-        s1.metric("Scans done", st.session_state.total_scans)
+
+        s1.metric(
+            "Scans done",
+            st.session_state.total_scans
+        )
+
         if st.session_state.detected_mood:
-            s2.metric("Last result", st.session_state.detected_mood.title())
-        s3.metric("Confidence", f"{st.session_state.confidence*100:.0f}%"
-                  if st.session_state.confidence else "—")
+            s2.metric(
+                "Last result",
+                st.session_state.detected_mood.title()
+            )
+
+        s3.metric(
+            "Confidence",
+            f"{st.session_state.confidence * 100:.0f}%"
+            if st.session_state.confidence
+            else "—"
+        )
 
     st.markdown(
         '<div class="footer-txt" style="margin-top:28px">'
@@ -1388,3 +1469,4 @@ else:
         '</div>',
         unsafe_allow_html=True
     )
+
