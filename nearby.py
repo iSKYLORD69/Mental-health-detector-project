@@ -424,3 +424,83 @@ def build_map_html(lat, lng, places, selected_idx=None):
     </body>
     </html>
     """
+
+
+# ══════════════════════════════════════════════════════════
+# BROWSER LOCATION DETECTOR  ← THIS WAS MISSING
+# ══════════════════════════════════════════════════════════
+
+def build_location_detector_html() -> str:
+    return """
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <style>
+            * { box-sizing: border-box; margin: 0; padding: 0; }
+            body { background: transparent; font-family: 'DM Sans', sans-serif; padding: 0; }
+            .btn {
+                width: 100%; padding: 14px 20px;
+                background: linear-gradient(135deg, #7c3aed, #4f46e5);
+                color: white; border: none; border-radius: 14px;
+                font-size: 15px; font-weight: 700; cursor: pointer;
+                display: flex; align-items: center; justify-content: center;
+                gap: 8px; letter-spacing: 0.03em; transition: opacity 0.2s;
+            }
+            .btn:hover { opacity: 0.88; }
+            .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+            #msg { margin-top: 10px; font-size: 13px;
+                   color: rgba(255,255,255,0.5);
+                   text-align: center; min-height: 20px; }
+            #coords { margin-top: 6px; font-size: 12px;
+                      color: #a78bfa; text-align: center; font-weight: 600; }
+        </style>
+    </head>
+    <body>
+        <button class="btn" id="locBtn" onclick="detect()">
+            📍 Allow Location Access
+        </button>
+        <div id="msg">Tap to detect your current location automatically</div>
+        <div id="coords"></div>
+        <script>
+            function detect() {
+                var btn = document.getElementById('locBtn');
+                var msg = document.getElementById('msg');
+                var coords = document.getElementById('coords');
+
+                btn.disabled = true;
+                btn.innerHTML = '⏳ Detecting...';
+                msg.innerText = 'Please allow location access in your browser popup...';
+
+                if (!navigator.geolocation) {
+                    msg.innerText = '❌ Geolocation not supported. Use manual input below.';
+                    btn.disabled = false;
+                    btn.innerHTML = '📍 Allow Location Access';
+                    return;
+                }
+
+                navigator.geolocation.getCurrentPosition(
+                    function(pos) {
+                        var lat = pos.coords.latitude.toFixed(6);
+                        var lng = pos.coords.longitude.toFixed(6);
+                        btn.innerHTML = '✅ Location Detected!';
+                        msg.innerText = 'Location found! Copy the coordinates below.';
+                        coords.innerText = 'Lat: ' + lat + '  ·  Lng: ' + lng;
+                    },
+                    function(err) {
+                        btn.disabled = false;
+                        btn.innerHTML = '📍 Allow Location Access';
+                        if (err.code === 1) {
+                            msg.innerText = '❌ Permission denied. Use manual input below.';
+                        } else if (err.code === 2) {
+                            msg.innerText = '❌ Location unavailable. Use manual input below.';
+                        } else {
+                            msg.innerText = '❌ Timeout. Use manual input below.';
+                        }
+                    },
+                    { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+                );
+            }
+        </script>
+    </body>
+    </html>
+    """
