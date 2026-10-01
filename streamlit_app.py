@@ -2,12 +2,19 @@ import streamlit as st
 import plotly.graph_objects as go
 import joblib
 import os
-from groq import Groq
+from openai import OpenAI
 from dotenv import load_dotenv
 import time
 import streamlit.components.v1 as components
-from nearby import geocode_city, get_nearby_places, build_map_html, build_location_detector_html
 from face_scan_component import render_face_scan_tab
+
+# ── Nearby / OSM imports ──────────────────────────────────
+from nearby import (
+    geocode_city as _geocode_city_raw,
+    get_nearby_places as _get_nearby_places_raw,
+    build_map_html,
+    build_location_detector_html,
+)
 
 load_dotenv()
 
@@ -377,15 +384,44 @@ def load_model():
 
 model = load_model()
 
-# ── Groq ───────────────────────────────────────────────────
+
+# ══════════════════════════════════════════════════════════
+# LLM CLIENTS — DeepSeek primary, Groq fallback
+# ══════════════════════════════════════════════════════════
+
+@st.cache_resource
+def load_deepseek():
+    key = os.getenv("DEEPSEEK_API_KEY") or st.secrets.get("DEEPSEEK_API_KEY", None)
+    if not key:
+        return None
+    return OpenAI(
+        api_key=key,
+        base_url="https://api.deepseek.com",
+    )
+
+deepseek_client = load_deepseek()
+
+
 @st.cache_resource
 def load_groq():
     key = os.getenv("GROQ_API_KEY") or st.secrets.get("GROQ_API_KEY", None)
     if not key:
         return None
-    return Groq(api_key=key)
+    try:
+        from groq import Groq
+        return Groq(api_key=key)
+    except Exception:
+        return None
 
 groq_client = load_groq()
+
+DEEPSEEK_MODEL      = "deepseek-chat"          # V3 — warm & fast
+GROQ_FALLBACK_MODEL = "llama-3.3-70b-versatile"
+
+
+# ══════════════════════════════════════════════════════════
+# SESSION STATE
+# ══════════════════════════════════════════════════════════
 
 for k, v in {
     "page":                 "analyze",
@@ -402,13 +438,31 @@ for k, v in {
     "nearby_places":        [],
     "selected_place_idx":   None,
     "nearby_error":         None,
+    "_nearby_loc_key":      None,
     "scan_source":          "text",
 }.items():
     if k not in st.session_state:
         st.session_state[k] = v
 
 
-# ── System prompt ──────────────────────────────────────────
+# ══════════════════════════════════════════════════════════
+# CACHED OSM WRAPPERS
+# ══════════════════════════════════════════════════════════
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def geocode_city_cached(name: str):
+    return _geocode_city_raw(name)
+
+
+@st.cache_data(ttl=300, show_spinner=False)
+def get_nearby_places_cached(lat: float, lng: float, stype: str, radius: int):
+    return _get_nearby_places_raw(lat, lng, stype, radius)
+
+
+# ══════════════════════════════════════════════════════════
+# SYSTEM PROMPT
+# ══════════════════════════════════════════════════════════
+
 def build_system_prompt(mood, ctx):
     cl = f"User's text ('{mood}'): \"{ctx[:200]}\"\n\n" if ctx else ""
     m  = {
@@ -427,29 +481,56 @@ Never diagnose. Always remind professional help exists.
 Crisis numbers: iCall 9152987821 | AASRA 91-22-27546669 | Tele MANAS 14416"""
 
 
-# ── Groq response ──────────────────────────────────────────
+# ══════════════════════════════════════════════════════════
+# MELLO REPLY — DeepSeek primary, Groq fallback
+# ══════════════════════════════════════════════════════════
+
+def _messages_for(messages, mood, ctx):
+    sys_p = build_system_prompt(mood, ctx)
+    msgs = [{"role": "system", "content": sys_p}]
+    for m in messages:
+        if m["role"] in ("user", "assistant"):
+            msgs.append({"role": m["role"], "content": m["content"]})
+    return msgs
+
+
 def mello_reply(messages, mood, ctx):
-    if not groq_client:
-        return "I'm having trouble connecting 💙\n\n📞 iCall: 9152987821"
-    try:
-        sys_p = build_system_prompt(mood, ctx)
-        msgs  = [{"role": "system", "content": sys_p}]
-        for m in messages:
-            if m["role"] in ["user", "assistant"]:
-                msgs.append({"role": m["role"], "content": m["content"]})
-        r = groq_client.chat.completions.create(
-            model="qwen/qwen3.8-27b",
-            messages=msgs,
-            max_tokens=512,
-            temperature=0.75
-        )
-        return r.choices[0].message.content
-    except Exception as e:
-        print(f"Mello error: {e}")
-        err = str(e).lower()
-        if "429" in err or "quota" in err:
-            return "I need a breath — try again in a moment 💙\n\n📞 iCall: 9152987821"
-        return "Something went wrong 💙 Please try again."
+    msgs = _messages_for(messages, mood, ctx)
+
+    # ── Primary: DeepSeek V3 ─────────────────────────────
+    if deepseek_client:
+        try:
+            r = deepseek_client.chat.completions.create(
+                model=DEEPSEEK_MODEL,
+                messages=msgs,
+                max_tokens=512,
+                temperature=0.75,
+                stream=False,
+            )
+            content = r.choices[0].message.content
+            if content and content.strip():
+                return content.strip()
+        except Exception as e:
+            print(f"[DeepSeek] error: {e}")
+
+    # ── Fallback: Groq ────────────────────────────────────
+    if groq_client:
+        try:
+            r = groq_client.chat.completions.create(
+                model=GROQ_FALLBACK_MODEL,
+                messages=msgs,
+                max_tokens=512,
+                temperature=0.75,
+            )
+            return r.choices[0].message.content
+        except Exception as e:
+            print(f"[Groq fallback] error: {e}")
+            err = str(e).lower()
+            if "429" in err or "quota" in err:
+                return "I need a breath — try again in a moment 💙\n\n📞 iCall: 9152987821"
+
+    # ── Both failed ───────────────────────────────────────
+    return "Something went wrong 💙 Please try again.\n\n📞 iCall: 9152987821"
 
 
 # ── Open Mello ─────────────────────────────────────────────
@@ -480,7 +561,7 @@ def open_mello(mood, ctx, crisis=False):
 
 
 # ══════════════════════════════════════════════════════════
-# TOPBAR — always visible
+# TOPBAR
 # ══════════════════════════════════════════════════════════
 def render_topbar():
     page        = st.session_state.page
@@ -796,19 +877,16 @@ elif st.session_state.page == "results":
 
 
 # ══════════════════════════════════════════════════════════
-# PAGE: NEARBY HELP
+# PAGE: NEARBY HELP (OpenStreetMap)
 # ══════════════════════════════════════════════════════════
 elif st.session_state.page == "nearby":
 
     DEFAULT_LAT, DEFAULT_LNG = 28.6139, 77.2090   # New Delhi
 
-    # ── Guarantee the map ALWAYS has a location ─────────────
+    # ── Guarantee a location so the map ALWAYS renders ──────
     if st.session_state.user_lat is None:
         st.session_state.user_lat = DEFAULT_LAT
         st.session_state.user_lng = DEFAULT_LNG
-
-    if "_nearby_loc_key" not in st.session_state:
-        st.session_state._nearby_loc_key = None
 
     # ── Hero ────────────────────────────────────────────────
     st.markdown("""
@@ -816,7 +894,7 @@ elif st.session_state.page == "nearby":
                 text-align:center;padding:16px 0 8px">
         <div class="hero-title">Nearby Help</div>
         <div class="hero-sub">
-            Find hospitals, clinics and doctors near you
+            Hospitals, clinics and doctors near you · Powered by OpenStreetMap
         </div>
         <div class="hero-bar"></div>
     </div>
@@ -856,7 +934,6 @@ elif st.session_state.page == "nearby":
             mood.lower(),
             "We recommend consulting a mental health professional nearby."
         )
-
         color = "#ef4444" if mood.lower() == "suicidal" else "#7c3aed"
 
         st.markdown(f"""
@@ -913,7 +990,7 @@ elif st.session_state.page == "nearby":
 
     st.divider()
 
-    # ── Location controls (collapsed by default so map is above fold) ──
+    # ── Location controls (collapsed so map is above the fold) ──
     with st.expander("📍 Change Location", expanded=False):
         tab1, tab2 = st.tabs(["🌐 Auto-detect", "✏️ Manual input"])
 
@@ -931,8 +1008,7 @@ elif st.session_state.page == "nearby":
             st.markdown("""
             <div style="font-size:0.75rem;color:rgba(255,255,255,0.3);
                         margin-top:8px;font-family:'DM Sans',sans-serif;">
-                If auto-detect doesn't work, paste your coordinates
-                in the Manual Input tab.
+                If auto-detect doesn't work, paste your coordinates below.
             </div>
             """, unsafe_allow_html=True)
 
@@ -973,7 +1049,7 @@ elif st.session_state.page == "nearby":
 
             if find_btn and city_input.strip():
                 with st.spinner(f"Finding {city_input}..."):
-                    found_lat, found_lng, display = geocode_city(city_input)
+                    found_lat, found_lng, display = geocode_city_cached(city_input)
                 if found_lat:
                     st.session_state.user_lat = found_lat
                     st.session_state.user_lng = found_lng
@@ -1041,13 +1117,13 @@ elif st.session_state.page == "nearby":
 
     radius_km = st.slider("Search radius", 1, 20, 5, format="%d km")
 
-    # ── Decide whether to search ────────────────────────────
+    # ── Determine search type ───────────────────────────────
     search_type = None
     if btn_hosp: search_type = "hospital"
     if btn_doc:  search_type = "doctor"
     if btn_both: search_type = "both"
 
-    # Auto-search whenever the location key changes (first visit + on coord change)
+    # Auto-search on first visit or when location changes
     loc_key = f"{st.session_state.user_lat:.4f},{st.session_state.user_lng:.4f}"
     auto_search = (
         search_type is None
@@ -1059,11 +1135,11 @@ elif st.session_state.page == "nearby":
 
     # ── Run search — never raises, never hides the map ──────
     if search_type and st.session_state.user_lat is not None:
-        with st.spinner(f"Searching within {radius_km} km..."):
+        with st.spinner(f"Searching OpenStreetMap within {radius_km} km..."):
             try:
-                found = get_nearby_places(
-                    st.session_state.user_lat,
-                    st.session_state.user_lng,
+                found = get_nearby_places_cached(
+                    round(st.session_state.user_lat, 4),
+                    round(st.session_state.user_lng, 4),
                     search_type,
                     radius_km * 1000,
                 )
@@ -1085,7 +1161,7 @@ elif st.session_state.page == "nearby":
     st.markdown('<div class="section-label">🗺️ Map</div>',
                 unsafe_allow_html=True)
 
-    # Status banner above the map (informational, not fatal)
+    # Status banner above the map
     if st.session_state.nearby_error:
         st.warning(
             f"⚠️ Couldn't reach OpenStreetMap servers "
@@ -1136,7 +1212,7 @@ elif st.session_state.page == "nearby":
                                     color:rgba(255,255,255,0.4);line-height:1.7;">
                             🏷️ {p['type']}<br>
                             📍 {p['dist_km']} km away<br>
-                            {('📞 ' + p['phone']) if p['phone'] else ''}
+                            {('📞 ' + p['phone']) if p.get('phone') else ''}
                         </div>
                     </div>
                     """, unsafe_allow_html=True)
@@ -1272,7 +1348,7 @@ else:
 
     st.markdown(
         '<div class="footer-txt" style="margin-top:28px">'
-        'Built with Python · Scikit-learn · Groq · Streamlit'
+        'Built with Python · Scikit-learn · DeepSeek · OpenStreetMap · Streamlit'
         '</div>',
         unsafe_allow_html=True
     )
