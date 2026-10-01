@@ -776,7 +776,7 @@ elif st.session_state.page == "results":
 
 
 # ══════════════════════════════════════════════════════════
-# PAGE: NEARBY HELP  (UPGRADED)
+# PAGE: NEARBY HELP
 # ══════════════════════════════════════════════════════════
 elif st.session_state.page == "nearby":
 
@@ -786,6 +786,9 @@ elif st.session_state.page == "nearby":
     if st.session_state.user_lat is None:
         st.session_state.user_lat = DEFAULT_LAT
         st.session_state.user_lng = DEFAULT_LNG
+
+    if "_nearby_loc_key" not in st.session_state:
+        st.session_state._nearby_loc_key = None
 
     # ── Hero ────────────────────────────────────────────────
     st.markdown("""
@@ -887,7 +890,96 @@ elif st.session_state.page == "nearby":
 
     st.divider()
 
-    # ── Location controls (collapsed) ───────────────────────
+    # ── Search controls (ABOVE the map so state is set first) ──
+    st.markdown('<div class="section-label">🔍 Search what to find</div>',
+                unsafe_allow_html=True)
+
+    sc1, sc2, sc3 = st.columns(3)
+    with sc1:
+        btn_hosp = st.button("🏥 Hospitals", use_container_width=True)
+    with sc2:
+        btn_doc  = st.button("👨‍⚕️ Clinics & Doctors", use_container_width=True)
+    with sc3:
+        btn_both = st.button("🔍 Search All", use_container_width=True,
+                             type="primary")
+
+    radius_km = st.slider("Search radius", 1, 20, 5, format="%d km")
+
+    # ── Determine search type ───────────────────────────────
+    search_type = None
+    if btn_hosp: search_type = "hospital"
+    if btn_doc:  search_type = "doctor"
+    if btn_both: search_type = "both"
+
+    lat = st.session_state.user_lat
+    lng = st.session_state.user_lng
+    loc_key = f"{lat:.4f},{lng:.4f}"
+
+    # ── AUTO-SEARCH: fire on first visit or when location changes ──
+    # This is what makes the map already populated when you open the page.
+    if st.session_state._nearby_loc_key != loc_key and search_type is None:
+        st.session_state._nearby_loc_key = loc_key
+        st.session_state.selected_place_idx = None
+        with st.spinner("Finding hospitals near you..."):
+            try:
+                auto_found = get_nearby_places_cached(
+                    round(lat, 4), round(lng, 4), "both", 5000
+                )
+                st.session_state.nearby_places = auto_found
+                st.session_state.nearby_error = None
+            except Exception as e:
+                st.session_state.nearby_places = []
+                st.session_state.nearby_error = str(e)
+
+    # ── Manual search click ─────────────────────────────────
+    if search_type:
+        with st.spinner(f"Searching OpenStreetMap within {radius_km} km..."):
+            try:
+                found = get_nearby_places_cached(
+                    round(lat, 4),
+                    round(lng, 4),
+                    search_type,
+                    radius_km * 1000,
+                )
+                st.session_state.nearby_places = found
+                st.session_state.nearby_error = None
+                st.session_state.selected_place_idx = None
+            except Exception as e:
+                st.session_state.nearby_places = []
+                st.session_state.nearby_error = str(e)
+
+    # ── Current state values ────────────────────────────────
+    places  = st.session_state.nearby_places or []
+    sel_idx = st.session_state.get("selected_place_idx", None)
+
+    # ── Status banner ───────────────────────────────────────
+    if st.session_state.nearby_error:
+        st.warning(
+            "⚠️ Couldn't reach OpenStreetMap servers. "
+            "The map below still shows your location."
+        )
+    elif places:
+        st.success(f"✅ {len(places)} place(s) found near you")
+    else:
+        st.info("📍 Showing your location. Press a search button above to find help nearby.")
+
+    # ══════════════════════════════════════════════════════════
+    # MAP — always rendered, defaults to Delhi with hospitals
+    # ══════════════════════════════════════════════════════════
+    st.markdown('<div class="section-label">🗺️ Map</div>',
+                unsafe_allow_html=True)
+
+    try:
+        map_html = build_map_html(lat, lng, places, sel_idx)
+        # Cache-buster so the iframe re-mounts when places or selection change
+        map_html += f"\n<!-- v={len(places)}-{sel_idx}-{lat:.4f}-{lng:.4f} -->"
+        components.html(map_html, height=440)
+    except Exception as e:
+        st.error(f"Map could not render, but the list below is still usable. ({e})")
+
+    st.write("")
+
+    # ── Location controls (collapsed expander) ──────────────
     with st.expander("📍 Change Location", expanded=False):
         tab1, tab2 = st.tabs(["🌐 Auto-detect", "✏️ Manual input"])
 
@@ -925,6 +1017,7 @@ elif st.session_state.page == "nearby":
                     st.session_state.nearby_places = []
                     st.session_state.selected_place_idx = None
                     st.session_state.nearby_error = None
+                    st.session_state._nearby_loc_key = None   # force auto-search
                     st.success("✅ Location set!")
                     st.rerun()
                 except Exception:
@@ -952,6 +1045,7 @@ elif st.session_state.page == "nearby":
                     st.session_state.nearby_places = []
                     st.session_state.selected_place_idx = None
                     st.session_state.nearby_error = None
+                    st.session_state._nearby_loc_key = None   # force auto-search
                     st.success(f"✅ {display[:65]}...")
                     st.rerun()
                 else:
@@ -978,6 +1072,7 @@ elif st.session_state.page == "nearby":
                 st.session_state.nearby_places = []
                 st.session_state.selected_place_idx = None
                 st.session_state.nearby_error = None
+                st.session_state._nearby_loc_key = None   # force auto-search
                 st.rerun()
 
             st.caption("Find your coordinates: maps.google.com → right click → copy.")
@@ -998,113 +1093,8 @@ elif st.session_state.page == "nearby":
 
     st.write("")
 
-    # ── Search controls ─────────────────────────────────────
-    st.markdown('<div class="section-label">What to find</div>',
-                unsafe_allow_html=True)
-
-    sc1, sc2, sc3 = st.columns(3)
-    with sc1:
-        btn_hosp = st.button("🏥 Hospitals", use_container_width=True)
-    with sc2:
-        btn_doc  = st.button("👨‍⚕️ Clinics & Doctors", use_container_width=True)
-    with sc3:
-        btn_both = st.button("🔍 Search All", use_container_width=True,
-                             type="primary")
-
-    radius_km = st.slider("Search radius", 1, 20, 5, format="%d km")
-
-    # ── Determine search type ───────────────────────────────
-    search_type = None
-    if btn_hosp: search_type = "hospital"
-    if btn_doc:  search_type = "doctor"
-    if btn_both: search_type = "both"
-
-    # Auto-search on first visit or when location changes
-    loc_key = f"{st.session_state.user_lat:.4f},{st.session_state.user_lng:.4f}"
-    auto_search = (
-        search_type is None
-        and st.session_state._nearby_loc_key != loc_key
-    )
-    if auto_search:
-        search_type = "both"
-        st.session_state._nearby_loc_key = loc_key
-
-    # ── Run search — never raises, never hides the map ──────
-    if search_type and st.session_state.user_lat is not None:
-        with st.spinner(f"Searching OpenStreetMap within {radius_km} km..."):
-            try:
-                found = get_nearby_places_cached(
-                    round(st.session_state.user_lat, 4),
-                    round(st.session_state.user_lng, 4),
-                    search_type,
-                    radius_km * 1000,
-                )
-                st.session_state.nearby_places = found
-                st.session_state.nearby_error = None
-                if not auto_search:
-                    st.session_state.selected_place_idx = None
-            except Exception as e:
-                st.session_state.nearby_places = []
-                st.session_state.nearby_error = str(e)
-
-    # ── Test button ─────────────────────────────────────────
-    if st.button("🧪 Run live Overpass test", key="overpass_test"):
-        with st.spinner("Querying Overpass directly..."):
-            test_places = get_nearby_places(
-                st.session_state.user_lat,
-                st.session_state.user_lng,
-                "both",
-                10000,
-            )
-        st.write(f"**Direct query returned {len(test_places)} places**")
-        if test_places:
-            for p in test_places[:5]:
-                st.write(f"• {p['name']} — {p['dist_km']} km ({p['type']})")
-        else:
-            st.warning("Overpass returned 0 results. Check terminal for logs.")
-
-    # ── Debug panel ─────────────────────────────────────────
-    with st.expander("🔧 Debug: search results", expanded=False):
-        st.write("**Search type:**", search_type or "(none)")
-        st.write("**Radius (m):**", radius_km * 1000)
-        st.write("**Lat,Lng:**", st.session_state.user_lat, st.session_state.user_lng)
-        st.write("**Places returned:**", len(st.session_state.nearby_places or []))
-        if st.session_state.nearby_places:
-            st.json(st.session_state.nearby_places[:3])
-        if st.session_state.nearby_error:
-            st.error(st.session_state.nearby_error)
-
-    # ── Map — ALWAYS rendered ───────────────────────────────
-    lat = st.session_state.user_lat
-    lng = st.session_state.user_lng
-    places  = st.session_state.nearby_places or []
-    sel_idx = st.session_state.get("selected_place_idx", None)
-
-    st.write("")
-    st.markdown('<div class="section-label">🗺️ Map</div>',
-                unsafe_allow_html=True)
-
-    if st.session_state.nearby_error:
-        st.warning(
-            f"⚠️ Couldn't reach OpenStreetMap servers "
-            f"({st.session_state.nearby_error}). "
-            f"The map below still shows your location."
-        )
-    elif places:
-        st.success(f"✅ {len(places)} place(s) found within {radius_km} km")
-    else:
-        st.info("📍 Showing your location. Press a search button above to find help nearby.")
-
-    try:
-        map_html = build_map_html(lat, lng, places, sel_idx)
-        map_html += f"\n<!-- v={len(places)}-{sel_idx} -->"
-        components.html(map_html, height=440)
-    except Exception as e:
-        st.error(f"Map could not render, but the list below is still usable. ({e})")
-
     # ── Result cards ────────────────────────────────────────
     if places:
-        st.write("")
         st.markdown(
             '<div class="section-label">Tap a card to zoom the map to it</div>',
             unsafe_allow_html=True,
@@ -1145,6 +1135,7 @@ elif st.session_state.page == "nearby":
                         st.session_state.selected_place_idx = idx
                         st.rerun()
 
+        # Directions for the selected hospital
         if sel_idx is not None and sel_idx < len(places):
             sel = places[sel_idx]
             st.write("")
@@ -1188,88 +1179,4 @@ elif st.session_state.page == "nearby":
         "🚨 Emergency: **112** · "
         "iCall: **9152987821** · "
         "Tele MANAS: **14416** *(free 24/7)*"
-    )
-
-
-# ══════════════════════════════════════════════════════════
-# PAGE: ANALYZE
-# ══════════════════════════════════════════════════════════
-else:
-
-    st.markdown("""
-    <div style="animation:slideUp 0.6s ease-out;text-align:center;padding:20px 0 8px">
-        <div class="hero-title">MindScan</div>
-        <div class="hero-sub">
-            Detect emotional distress signals in text · NLP + AI
-        </div>
-        <div class="hero-bar"></div>
-    </div>
-    """, unsafe_allow_html=True)
-
-    st.write("")
-    st.warning("A Tool for detecting mental health of a person by analyzing their text.")
-    st.write("")
-
-    tab_text, tab_face = st.tabs(["✍️  Analyze Text", "📷  Live Face Scan"])
-
-    with tab_text:
-        st.markdown('<div class="section-label">Or write your own</div>',
-                    unsafe_allow_html=True)
-        text_input = st.text_area(
-            label="",
-            height=160,
-            value=st.session_state.get("text_input", ""),
-            placeholder="How have you been feeling lately? Write freely — this is a safe space...",
-        )
-        st.write("")
-        if st.button("✦ Analyze Text", type="primary", use_container_width=True):
-            if not text_input.strip():
-                st.error("Please enter some text first.")
-                st.stop()
-            with st.spinner("Scanning for signals..."):
-                crisis_keywords = ["suicide","suicidal","kill myself","end my life","want to die"]
-
-                if any(keyword in text_input.lower() for keyword in crisis_keywords):
-                    pred = "suicidal"
-                    proba = model.predict_proba([text_input])[0]
-                else:
-                    pred = model.predict([text_input])[0]
-                    proba = model.predict_proba([text_input])[0]
-                lbls  = model.classes_
-                sc    = {l: round(float(p),4) for l,p in zip(lbls,proba)}
-                conf  = round(float(max(proba)),4)
-            st.session_state.detected_mood     = pred
-            st.session_state.user_text_context = text_input
-            st.session_state.scores            = sc
-            st.session_state.confidence        = conf
-            st.session_state.scan_source       = "text"
-            st.session_state.total_scans      += 1
-            st.session_state.mood_history.append(pred)
-            if pred.lower() == "suicidal":
-                with st.spinner("Connecting you to Mello..."):
-                    time.sleep(1.2)
-                open_mello("suicidal", text_input, crisis=True)
-            else:
-                st.session_state.page = "results"
-            st.rerun()
-
-    with tab_face:
-        render_face_scan_tab()
-    st.write("")
-
-    if st.session_state.total_scans > 0:
-        st.divider()
-        st.markdown('<div class="section-label">Session</div>', unsafe_allow_html=True)
-        s1, s2, s3 = st.columns(3)
-        s1.metric("Scans done", st.session_state.total_scans)
-        if st.session_state.detected_mood:
-            s2.metric("Last result", st.session_state.detected_mood.title())
-        s3.metric("Confidence", f"{st.session_state.confidence*100:.0f}%"
-                  if st.session_state.confidence else "—")
-
-    st.markdown(
-        '<div class="footer-txt" style="margin-top:28px">'
-        'Built with Python · Scikit-learn · Groq · Streamlit'
-        '</div>',
-        unsafe_allow_html=True
     )
