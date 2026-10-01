@@ -1,4 +1,3 @@
-import os
 import time
 import requests
 from functools import lru_cache
@@ -11,9 +10,10 @@ from math import radians, sin, cos, sqrt, atan2
 
 USER_AGENT = "MindScan/1.0 (mental-health-resource-finder)"
 
+# Nominatim allows max 1 request per second
 _NOMINATIM_LAST = {"t": 0.0}
 
-
+# Reuse one TCP connection pool across requests
 _session = requests.Session()
 _session.headers.update({"User-Agent": USER_AGENT})
 
@@ -41,13 +41,12 @@ def geocode_city(city_name: str):
 
     try:
         _nominatim_throttle()
-
         r = _session.get(
             "https://nominatim.openstreetmap.org/search",
             params={
-                "q":      city_name.strip(),
-                "format": "jsonv2",
-                "limit":  1,
+                "q":              city_name.strip(),
+                "format":         "jsonv2",
+                "limit":          1,
                 "addressdetails": 0,
             },
             timeout=15,
@@ -107,24 +106,42 @@ def haversine(lat1, lng1, lat2, lng2):
 # NEARBY PLACES (Overpass API)
 # ══════════════════════════════════════════════════════════
 
-
 _OVERPASS_SERVERS = [
     "https://overpass-api.de/api/interpreter",
     "https://overpass.kumi.systems/api/interpreter",
     "https://overpass.private.coffee/api/interpreter",
 ]
 
-# OSM tags for healthcare facilities
-_FILTERS = {
-    # Hospitals only (including psychiatric hospitals)
-    "hospital": '["amenity"="hospital"]',
 
-    # Clinics + doctors + psychiatric clinics
-    "doctor":   '["amenity"~"^(clinic|doctors)$"]',
-
-    # Everything healthcare-related
-    "both":     '["amenity"~"^(hospital|clinic|doctors)$"]',
-}
+def _build_tag_filters(search_type: str):
+    """
+    Return list of OSM tag filters. Hospitals in India are often tagged
+    with `healthcare=hospital` rather than `amenity=hospital`, so we
+    query BOTH to maximise coverage.
+    """
+    if search_type == "hospital":
+        return [
+            '["amenity"="hospital"]',
+            '["healthcare"="hospital"]',
+        ]
+    if search_type == "doctor":
+        return [
+            '["amenity"="clinic"]',
+            '["amenity"="doctors"]',
+            '["healthcare"="clinic"]',
+            '["healthcare"="doctor"]',
+            '["healthcare"="centre"]',
+        ]
+    # both
+    return [
+        '["amenity"="hospital"]',
+        '["amenity"="clinic"]',
+        '["amenity"="doctors"]',
+        '["healthcare"="hospital"]',
+        '["healthcare"="clinic"]',
+        '["healthcare"="doctor"]',
+        '["healthcare"="centre"]',
+    ]
 
 
 def get_nearby_places(
@@ -135,34 +152,24 @@ def get_nearby_places(
 ):
     """
     Search healthcare facilities via OpenStreetMap Overpass API.
-    Never raises. Returns [] on total failure.
-
-    search_type: "hospital" | "doctor" | "both"
-    radius:      meters (max ~50000 recommended)
+    Never raises — returns [] on total failure.
     """
-    f = _FILTERS.get(search_type, _FILTERS["both"])
+    tag_filters = _build_tag_filters(search_type)
 
-    # NOTE: `out center;` is the correct Overpass QL.
-    # `out center tags;` is INVALID and rejects the entire query.
-    query = f"""
-    [out:json][timeout:30];
-    (
-      node{f}(around:{radius},{lat},{lng});
-      way{f}(around:{radius},{lat},{lng});
-    );
-    out center;
-    """
+    parts = []
+    for f in tag_filters:
+        parts.append(f'node{f}(around:{radius},{lat},{lng});')
+        parts.append(f'way{f}(around:{radius},{lat},{lng});')
+
+    # Correct Overpass QL — `out center;` only (NOT `out center tags;`)
+    query = "[out:json][timeout:40];\n(\n" + "\n".join(parts) + "\n);\nout center;"
 
     last_error = None
 
     for server in _OVERPASS_SERVERS:
         try:
             print(f"[Overpass] trying {server}")
-            r = _session.post(
-                server,
-                data=query,
-                timeout=40,
-            )
+            r = _session.post(server, data=query, timeout=50)
 
             if r.status_code != 200:
                 last_error = f"HTTP {r.status_code} from {server}"
@@ -173,18 +180,24 @@ def get_nearby_places(
                 data = r.json()
             except ValueError:
                 last_error = f"Invalid JSON from {server}"
+                print(f"[Overpass] {last_error}")
                 continue
+
+            elements = data.get("elements", [])
+            print(f"[Overpass] raw elements: {len(elements)}")
 
             places = _parse_overpass(data, lat, lng)
             places = _dedupe(places)
-            print(f"[Overpass] {len(places)} places from {server}")
+            print(f"[Overpass] parsed+deduped: {len(places)} places from {server}")
             return places[:15]
 
         except requests.Timeout:
             last_error = f"Timeout from {server}"
+            print(f"[Overpass] {last_error}")
             continue
         except Exception as e:
             last_error = f"{server} → {e}"
+            print(f"[Overpass] {last_error}")
             continue
 
     print(f"[Overpass] all servers failed. Last: {last_error}")
@@ -216,7 +229,7 @@ def _parse_overpass(data, user_lat, user_lng):
         except Exception:
             continue
 
-        # Address assembly (best-effort)
+        # Address assembly
         addr_bits = [
             tags.get("addr:housenumber", ""),
             tags.get("addr:street", ""),
@@ -227,19 +240,24 @@ def _parse_overpass(data, user_lat, user_lng):
         if not address:
             address = "Address not listed"
 
-        amenity = tags.get("amenity", "facility")
-        place_type = amenity.replace("_", " ").title()
+        # Type — prefer the more descriptive tag
+        if tags.get("healthcare"):
+            place_type = tags["healthcare"].replace("_", " ").title()
+        elif tags.get("amenity"):
+            place_type = tags["amenity"].replace("_", " ").title()
+        else:
+            place_type = "Facility"
 
         places.append({
-            "name":     name,
-            "address":  address,
-            "phone":    tags.get("phone") or tags.get("contact:phone") or "",
-            "website":  tags.get("website") or tags.get("contact:website") or "",
-            "type":     place_type,
-            "lat":      float(p_lat),
-            "lng":      float(p_lng),
-            "dist_m":   int(dist),
-            "dist_km":  round(dist / 1000, 1),
+            "name":      name,
+            "address":   address,
+            "phone":     tags.get("phone") or tags.get("contact:phone") or "",
+            "website":   tags.get("website") or tags.get("contact:website") or "",
+            "type":      place_type,
+            "lat":       float(p_lat),
+            "lng":       float(p_lng),
+            "dist_m":    int(dist),
+            "dist_km":   round(dist / 1000, 1),
             "emergency": tags.get("emergency") == "yes",
         })
 
@@ -263,13 +281,14 @@ def _dedupe(places):
 
 
 # ══════════════════════════════════════════════════════════
-# LEAFLET MAP RENDERER (OpenStreetMap tiles)
+# LEAFLET MAP RENDERER (OpenStreetMap + Esri tiles)
 # ══════════════════════════════════════════════════════════
 
 def build_map_html(lat, lng, places, selected_idx=None):
     """
-    Render a Leaflet map using OpenStreetMap data.
-    Two tile layers available: Dark Matter (default) and Standard OSM.
+    Render a Leaflet map.
+    Dark tile: Esri Dark Gray Canvas (free, no key).
+    Light tile: OpenStreetMap Standard (free, no key).
     """
 
     markers_js = ""
@@ -388,19 +407,19 @@ def build_map_html(lat, lng, places, selected_idx=None):
                 zoomControl: true
             }});
 
-            // Dark theme (CartoDB Dark Matter, based on OSM data)
+            // Dark theme — Esri Dark Gray Canvas (free, no key)
             var darkLayer = L.tileLayer(
-                'https://{{s}}.basemaps.cartocdn.com/dark_all/{{z}}/{{x}}/{{y}}{{r}}.png',
+                'https://server.arcgisonline.com/ArcGIS/rest/services/'
+                + 'Canvas/World_Dark_Gray_Base/MapServer/tile/{{z}}/{{y}}/{{x}}',
                 {{
                     attribution:
-                        '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> ' +
-                        '© <a href="https://carto.com/attributions">CARTO</a>',
-                    maxZoom: 19,
-                    subdomains: 'abcd'
+                        'Tiles © <a href="https://www.esri.com/">Esri</a> · ' +
+                        'Data © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+                    maxZoom: 19
                 }}
             );
 
-            // Standard OSM (light) — user can toggle
+            // Standard OSM (light) — free, no key
             var osmLayer = L.tileLayer(
                 'https://{{s}}.tile.openstreetmap.org/{{z}}/{{x}}/{{y}}.png',
                 {{
@@ -442,7 +461,7 @@ def build_map_html(lat, lng, places, selected_idx=None):
 
 
 # ══════════════════════════════════════════════════════════
-# BROWSER LOCATION DETECTOR (unchanged)
+# BROWSER LOCATION DETECTOR
 # ══════════════════════════════════════════════════════════
 
 def build_location_detector_html() -> str:
