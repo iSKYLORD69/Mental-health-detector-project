@@ -1234,8 +1234,13 @@ else:
                 st.error("Please enter some text first.")
                 st.stop()
             with st.spinner("Scanning for signals..."):
-                pred  = model.predict([text_input])[0]
-                proba = model.predict_proba([text_input])[0]
+                crisis_keywords = [ "suicide","suicidal","kill myself","end my life","want to die" ]
+                if any(keyword in text_input.lower() for keyword in crisis_keywords):
+                    pred = "suicidal"
+                    proba = model.predict_proba([text_input])[0]
+                else:
+                    pred  = model.predict([text_input])[0]
+                    proba = model.predict_proba([text_input])[0]
                 lbls  = model.classes_
                 sc    = {l: round(float(p),4) for l,p in zip(lbls,proba)}
                 conf  = round(float(max(proba)),4)
