@@ -9,18 +9,11 @@ from math import radians, sin, cos, sqrt, atan2
 # CONFIG
 # ══════════════════════════════════════════════════════════
 
-# OSM usage policy REQUIRES a proper User-Agent with contact info.
-# Update the email below to your real contact — otherwise you may
-# be blocked without warning.
-APP_NAME    = "MindScan/1.0"
-CONTACT     = os.getenv("OSM_CONTACT", "mindscan-app@example.com")
-USER_AGENT  = f"{APP_NAME} (mental-health-resource-finder; {CONTACT})"
+USER_AGENT = "MindScan/1.0 (mental-health-resource-finder)"
 
-# Nominatim allows max 1 request per second.
-# We track the last call time and sleep if needed.
 _NOMINATIM_LAST = {"t": 0.0}
 
-# Reuse one TCP connection pool across requests
+
 _session = requests.Session()
 _session.headers.update({"User-Agent": USER_AGENT})
 
@@ -114,7 +107,7 @@ def haversine(lat1, lng1, lat2, lng2):
 # NEARBY PLACES (Overpass API)
 # ══════════════════════════════════════════════════════════
 
-# Multiple Overpass mirrors — try in order until one works
+
 _OVERPASS_SERVERS = [
     "https://overpass-api.de/api/interpreter",
     "https://overpass.kumi.systems/api/interpreter",
