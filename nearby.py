@@ -10,10 +10,8 @@ from math import radians, sin, cos, sqrt, atan2
 
 USER_AGENT = "MindScan/1.0 (mental-health-resource-finder)"
 
-# Nominatim allows max 1 request per second
 _NOMINATIM_LAST = {"t": 0.0}
 
-# Reuse one TCP connection pool across requests
 _session = requests.Session()
 _session.headers.update({"User-Agent": USER_AGENT})
 
@@ -32,10 +30,7 @@ def _nominatim_throttle():
 
 @lru_cache(maxsize=128)
 def geocode_city(city_name: str):
-    """
-    Convert city/area name → (lat, lng, display_name) using Nominatim.
-    Returns (None, None, None) on failure. Cached per-process.
-    """
+    """Convert city/area name → (lat, lng, display_name)."""
     if not city_name or not city_name.strip():
         return None, None, None
 
@@ -114,11 +109,7 @@ _OVERPASS_SERVERS = [
 
 
 def _build_tag_filters(search_type: str):
-    """
-    Return list of OSM tag filters. Hospitals in India are often tagged
-    with `healthcare=hospital` rather than `amenity=hospital`, so we
-    query BOTH to maximise coverage.
-    """
+    """Return list of OSM tag filters — covers amenity + healthcare tags."""
     if search_type == "hospital":
         return [
             '["amenity"="hospital"]',
@@ -132,7 +123,6 @@ def _build_tag_filters(search_type: str):
             '["healthcare"="doctor"]',
             '["healthcare"="centre"]',
         ]
-    # both
     return [
         '["amenity"="hospital"]',
         '["amenity"="clinic"]',
@@ -150,10 +140,7 @@ def get_nearby_places(
     search_type: str = "both",
     radius: int = 5000,
 ):
-    """
-    Search healthcare facilities via OpenStreetMap Overpass API.
-    Never raises — returns [] on total failure.
-    """
+    """Search healthcare facilities via OpenStreetMap Overpass API."""
     tag_filters = _build_tag_filters(search_type)
 
     parts = []
@@ -161,7 +148,6 @@ def get_nearby_places(
         parts.append(f'node{f}(around:{radius},{lat},{lng});')
         parts.append(f'way{f}(around:{radius},{lat},{lng});')
 
-    # Correct Overpass QL — `out center;` only (NOT `out center tags;`)
     query = "[out:json][timeout:40];\n(\n" + "\n".join(parts) + "\n);\nout center;"
 
     last_error = None
@@ -214,7 +200,6 @@ def _parse_overpass(data, user_lat, user_lng):
         if not name:
             continue
 
-        # Coordinates
         if el["type"] == "node":
             p_lat, p_lng = el.get("lat"), el.get("lon")
         else:
@@ -229,7 +214,6 @@ def _parse_overpass(data, user_lat, user_lng):
         except Exception:
             continue
 
-        # Address assembly
         addr_bits = [
             tags.get("addr:housenumber", ""),
             tags.get("addr:street", ""),
@@ -240,7 +224,6 @@ def _parse_overpass(data, user_lat, user_lng):
         if not address:
             address = "Address not listed"
 
-        # Type — prefer the more descriptive tag
         if tags.get("healthcare"):
             place_type = tags["healthcare"].replace("_", " ").title()
         elif tags.get("amenity"):
@@ -266,7 +249,6 @@ def _parse_overpass(data, user_lat, user_lng):
 
 
 def _dedupe(places):
-    """Remove duplicates by name + rounded coords."""
     seen, unique = set(), []
     for p in places:
         key = (
@@ -281,22 +263,26 @@ def _dedupe(places):
 
 
 # ══════════════════════════════════════════════════════════
-# LEAFLET MAP RENDERER (OpenStreetMap + Esri tiles)
+# LEAFLET MAP RENDERER (Light OSM tiles only + auto-zoom)
 # ══════════════════════════════════════════════════════════
 
 def build_map_html(lat, lng, places, selected_idx=None):
     """
-    Render a Leaflet map.
-    Dark tile: Esri Dark Gray Canvas (free, no key).
-    Light tile: OpenStreetMap Standard (free, no key).
+    Render a Leaflet map with light OpenStreetMap tiles.
+
+    Behaviour:
+      • No selection  → map centred on the user, zoom 14, all markers visible.
+      • With selection → map smoothly zooms to the selected hospital
+        (zoom 16) and opens its popup automatically.
     """
 
+    # ── Marker & popup construction ─────────────────────────
     markers_js = ""
 
     for i, p in enumerate(places):
         is_sel = (i == selected_idx)
-        color = "#a78bfa" if is_sel else "#38bdf8"
-        r_size = 11 if is_sel else 8
+        color = "#7c3aed" if is_sel else "#0ea5e9"   # purple / blue
+        r_size = 12 if is_sel else 8
         open_popup = ".openPopup()" if is_sel else ""
 
         phone_html = (
@@ -339,7 +325,7 @@ def build_map_html(lat, lng, places, selected_idx=None):
         {open_popup};
         """
 
-    # Route line to selected place
+    # ── Route line to selected hospital ─────────────────────
     route_js = ""
     if selected_idx is not None and selected_idx < len(places):
         sel = places[selected_idx]
@@ -347,7 +333,7 @@ def build_map_html(lat, lng, places, selected_idx=None):
         L.polyline(
             [[{lat},{lng}], [{sel['lat']},{sel['lng']}]],
             {{
-                color: '#a78bfa',
+                color: '#7c3aed',
                 weight: 3,
                 dashArray: '10 6',
                 opacity: 0.75
@@ -355,15 +341,25 @@ def build_map_html(lat, lng, places, selected_idx=None):
         ).addTo(map);
         """
 
-    # Empty state message
+    # ── Auto-zoom: focus on selected hospital if any ────────
+    if selected_idx is not None and selected_idx < len(places):
+        sel = places[selected_idx]
+        center_js = f"[{sel['lat']}, {sel['lng']}]"
+        zoom_js   = "16"
+    else:
+        center_js = f"[{lat}, {lng}]"
+        zoom_js   = "14"
+
+    # ── Empty-state message ─────────────────────────────────
     empty_msg = ""
     if not places:
         empty_msg = """
         <div style="
             position:absolute;top:16px;left:50%;transform:translateX(-50%);
-            z-index:1000;background:rgba(7,6,26,0.92);color:white;
+            z-index:1000;background:rgba(255,255,255,0.95);color:#1a1a2e;
             padding:10px 16px;border-radius:12px;font-family:sans-serif;
-            font-size:13px;border:1px solid rgba(255,255,255,0.12);">
+            font-size:13px;border:1px solid rgba(0,0,0,0.1);
+            box-shadow:0 4px 16px rgba(0,0,0,0.15);">
             🔍 No places found yet — press a search button
         </div>
         """
@@ -377,24 +373,13 @@ def build_map_html(lat, lng, places, selected_idx=None):
               href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
         <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
         <style>
-            body {{ margin:0; padding:0; background:#07061a; }}
+            body {{ margin:0; padding:0; background:#f3f4f6; }}
             #map {{ width:100%; height:420px; border-radius:16px; }}
             .leaflet-popup-content-wrapper {{
                 background:#fff; border-radius:12px;
-                box-shadow:0 4px 24px rgba(0,0,0,0.3);
+                box-shadow:0 4px 24px rgba(0,0,0,0.2);
             }}
             .leaflet-popup-tip {{ background:#fff; }}
-            .leaflet-control-layers {{
-                background:rgba(20,18,40,0.92) !important;
-                color:white !important;
-                border:1px solid rgba(255,255,255,0.12) !important;
-                border-radius:10px !important;
-            }}
-            .leaflet-control-layers label {{
-                color:white !important;
-                font-family:sans-serif;
-                font-size:12px;
-            }}
         </style>
     </head>
     <body>
@@ -402,25 +387,14 @@ def build_map_html(lat, lng, places, selected_idx=None):
         {empty_msg}
         <script>
             var map = L.map('map', {{
-                center: [{lat},{lng}],
-                zoom: 14,
-                zoomControl: true
+                center: {center_js},
+                zoom: {zoom_js},
+                zoomControl: true,
+                scrollWheelZoom: true
             }});
 
-            // Dark theme — Esri Dark Gray Canvas (free, no key)
-            var darkLayer = L.tileLayer(
-                'https://server.arcgisonline.com/ArcGIS/rest/services/'
-                + 'Canvas/World_Dark_Gray_Base/MapServer/tile/{{z}}/{{y}}/{{x}}',
-                {{
-                    attribution:
-                        'Tiles © <a href="https://www.esri.com/">Esri</a> · ' +
-                        'Data © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
-                    maxZoom: 19
-                }}
-            );
-
-            // Standard OSM (light) — free, no key
-            var osmLayer = L.tileLayer(
+            // Light OpenStreetMap tiles (free, no key)
+            L.tileLayer(
                 'https://{{s}}.tile.openstreetmap.org/{{z}}/{{x}}/{{y}}.png',
                 {{
                     attribution:
@@ -428,19 +402,11 @@ def build_map_html(lat, lng, places, selected_idx=None):
                     maxZoom: 19,
                     subdomains: 'abc'
                 }}
-            );
-
-            darkLayer.addTo(map);
-
-            L.control.layers(
-                {{ "🌙 Dark": darkLayer, "☀️ Light": osmLayer }},
-                null,
-                {{ position: 'topright', collapsed: true }}
             ).addTo(map);
 
             // "You are here" pin
             L.circleMarker([{lat},{lng}], {{
-                radius: 13,
+                radius: 12,
                 fillColor: "#7c3aed",
                 color: "#fff",
                 weight: 3,
@@ -454,86 +420,6 @@ def build_map_html(lat, lng, places, selected_idx=None):
             {route_js}
 
             setTimeout(function() {{ map.invalidateSize(); }}, 300);
-        </script>
-    </body>
-    </html>
-    """
-
-
-# ══════════════════════════════════════════════════════════
-# BROWSER LOCATION DETECTOR
-# ══════════════════════════════════════════════════════════
-
-def build_location_detector_html() -> str:
-    return """
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <style>
-            * { box-sizing: border-box; margin: 0; padding: 0; }
-            body { background: transparent; font-family: 'DM Sans', sans-serif; padding: 0; }
-            .btn {
-                width: 100%; padding: 14px 20px;
-                background: linear-gradient(135deg, #7c3aed, #4f46e5);
-                color: white; border: none; border-radius: 14px;
-                font-size: 15px; font-weight: 700; cursor: pointer;
-                display: flex; align-items: center; justify-content: center;
-                gap: 8px; letter-spacing: 0.03em; transition: opacity 0.2s;
-            }
-            .btn:hover { opacity: 0.88; }
-            .btn:disabled { opacity: 0.5; cursor: not-allowed; }
-            #msg { margin-top: 10px; font-size: 13px;
-                   color: rgba(255,255,255,0.5);
-                   text-align: center; min-height: 20px; }
-            #coords { margin-top: 6px; font-size: 12px;
-                      color: #a78bfa; text-align: center; font-weight: 600; }
-        </style>
-    </head>
-    <body>
-        <button class="btn" id="locBtn" onclick="detect()">
-            📍 Allow Location Access
-        </button>
-        <div id="msg">Tap to detect your current location automatically</div>
-        <div id="coords"></div>
-        <script>
-            function detect() {
-                var btn = document.getElementById('locBtn');
-                var msg = document.getElementById('msg');
-                var coords = document.getElementById('coords');
-
-                btn.disabled = true;
-                btn.innerHTML = '⏳ Detecting...';
-                msg.innerText = 'Please allow location access in your browser popup...';
-
-                if (!navigator.geolocation) {
-                    msg.innerText = '❌ Geolocation not supported. Use manual input below.';
-                    btn.disabled = false;
-                    btn.innerHTML = '📍 Allow Location Access';
-                    return;
-                }
-
-                navigator.geolocation.getCurrentPosition(
-                    function(pos) {
-                        var lat = pos.coords.latitude.toFixed(6);
-                        var lng = pos.coords.longitude.toFixed(6);
-                        btn.innerHTML = '✅ Location Detected!';
-                        msg.innerText = 'Location found! Copy the coordinates below.';
-                        coords.innerText = 'Lat: ' + lat + '  ·  Lng: ' + lng;
-                    },
-                    function(err) {
-                        btn.disabled = false;
-                        btn.innerHTML = '📍 Allow Location Access';
-                        if (err.code === 1) {
-                            msg.innerText = '❌ Permission denied. Use manual input below.';
-                        } else if (err.code === 2) {
-                            msg.innerText = '❌ Location unavailable. Use manual input below.';
-                        } else {
-                            msg.innerText = '❌ Timeout. Use manual input below.';
-                        }
-                    },
-                    { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
-                );
-            }
         </script>
     </body>
     </html>
