@@ -1180,3 +1180,88 @@ elif st.session_state.page == "nearby":
         "iCall: **9152987821** · "
         "Tele MANAS: **14416** *(free 24/7)*"
     )
+
+
+# ══════════════════════════════════════════════════════════
+# PAGE: ANALYZE   ← THIS BLOCK WAS MISSING
+# ══════════════════════════════════════════════════════════
+else:
+
+    st.markdown("""
+    <div style="animation:slideUp 0.6s ease-out;text-align:center;padding:20px 0 8px">
+        <div class="hero-title">MindScan</div>
+        <div class="hero-sub">
+            Detect emotional distress signals in text · NLP + AI
+        </div>
+        <div class="hero-bar"></div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    st.write("")
+    st.warning("A Tool for detecting mental health of a person by analyzing their text.")
+    st.write("")
+
+    tab_text, tab_face = st.tabs(["✍️  Analyze Text", "📷  Live Face Scan"])
+
+    with tab_text:
+        st.markdown('<div class="section-label">Or write your own</div>',
+                    unsafe_allow_html=True)
+        text_input = st.text_area(
+            label="",
+            height=160,
+            value=st.session_state.get("text_input", ""),
+            placeholder="How have you been feeling lately? Write freely — this is a safe space...",
+        )
+        st.write("")
+        if st.button("✦ Analyze Text", type="primary", use_container_width=True):
+            if not text_input.strip():
+                st.error("Please enter some text first.")
+                st.stop()
+            with st.spinner("Scanning for signals..."):
+                crisis_keywords = ["suicide","suicidal","kill myself","end my life","want to die"]
+
+                if any(keyword in text_input.lower() for keyword in crisis_keywords):
+                    pred = "suicidal"
+                    proba = model.predict_proba([text_input])[0]
+                else:
+                    pred = model.predict([text_input])[0]
+                    proba = model.predict_proba([text_input])[0]
+                lbls  = model.classes_
+                sc    = {l: round(float(p),4) for l,p in zip(lbls,proba)}
+                conf  = round(float(max(proba)),4)
+            st.session_state.detected_mood     = pred
+            st.session_state.user_text_context = text_input
+            st.session_state.scores            = sc
+            st.session_state.confidence        = conf
+            st.session_state.scan_source       = "text"
+            st.session_state.total_scans      += 1
+            st.session_state.mood_history.append(pred)
+            if pred.lower() == "suicidal":
+                with st.spinner("Connecting you to Mello..."):
+                    time.sleep(1.2)
+                open_mello("suicidal", text_input, crisis=True)
+            else:
+                st.session_state.page = "results"
+            st.rerun()
+
+    with tab_face:
+        render_face_scan_tab()
+    st.write("")
+
+    # Stats row
+    if st.session_state.total_scans > 0:
+        st.divider()
+        st.markdown('<div class="section-label">Session</div>', unsafe_allow_html=True)
+        s1, s2, s3 = st.columns(3)
+        s1.metric("Scans done", st.session_state.total_scans)
+        if st.session_state.detected_mood:
+            s2.metric("Last result", st.session_state.detected_mood.title())
+        s3.metric("Confidence", f"{st.session_state.confidence*100:.0f}%"
+                  if st.session_state.confidence else "—")
+
+    st.markdown(
+        '<div class="footer-txt" style="margin-top:28px">'
+        'Built with Python · Scikit-learn · Groq · Streamlit'
+        '</div>',
+        unsafe_allow_html=True
+    )
