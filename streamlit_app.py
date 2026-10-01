@@ -397,11 +397,12 @@ for k, v in {
     "confidence":           0.0,
     "total_scans":          0,
     "mood_history":         [],
-    "user_lat":             None,       # ← add
-    "user_lng":             None,       # ← add
-    "nearby_places":        [],         # ← add
+    "user_lat":             None,
+    "user_lng":             None,
+    "nearby_places":        [],
     "selected_place_idx":   None,
-    "scan_source": "text",       # ← add
+    "nearby_error":         None,
+    "scan_source":          "text",
 }.items():
     if k not in st.session_state:
         st.session_state[k] = v
@@ -505,7 +506,6 @@ def render_topbar():
     </div>
     """, unsafe_allow_html=True)
 
-    # Always show all 4 buttons in one row
     nc1, nc2, nc3, nc4 = st.columns(4)
 
     with nc1:
@@ -519,7 +519,6 @@ def render_topbar():
             st.rerun()
 
     with nc2:
-        # Results button — greyed out label if no scan done yet
         btn_label = "📊 Last Results" if has_results else "📊 No results yet"
         if st.button(
             btn_label,
@@ -721,7 +720,6 @@ elif st.session_state.page == "results":
     )
     st.plotly_chart(fig, use_container_width=True)
 
-    # Word signals
     try:
         vec  = model.named_steps["tfidf"]
         clf  = model.named_steps["clf"]
@@ -795,14 +793,24 @@ elif st.session_state.page == "results":
                     unsafe_allow_html=True)
         st.info("**iCall:** 9152987821 · **AASRA:** 91-22-27546669 · "
                 "**Tele MANAS:** 14416 *(free 24/7)*")
-        
+
+
 # ══════════════════════════════════════════════════════════
 # PAGE: NEARBY HELP
 # ══════════════════════════════════════════════════════════
 elif st.session_state.page == "nearby":
 
-    import streamlit.components.v1 as components
+    DEFAULT_LAT, DEFAULT_LNG = 28.6139, 77.2090   # New Delhi
 
+    # ── Guarantee the map ALWAYS has a location ─────────────
+    if st.session_state.user_lat is None:
+        st.session_state.user_lat = DEFAULT_LAT
+        st.session_state.user_lng = DEFAULT_LNG
+
+    if "_nearby_loc_key" not in st.session_state:
+        st.session_state._nearby_loc_key = None
+
+    # ── Hero ────────────────────────────────────────────────
     st.markdown("""
     <div style="animation:slideUp 0.5s ease-out;
                 text-align:center;padding:16px 0 8px">
@@ -868,7 +876,6 @@ elif st.session_state.page == "nearby":
         </div>
         """, unsafe_allow_html=True)
 
-        # AASRA and crisis numbers always visible for high risk
         if mood.lower() in ["suicidal", "depression"]:
             st.markdown("""
             <div style="background:rgba(239,68,68,0.08);
@@ -883,26 +890,22 @@ elif st.session_state.page == "nearby":
                     <div style="background:rgba(255,255,255,0.05);border-radius:10px;
                                 padding:10px 14px;font-size:0.8rem;
                                 color:rgba(255,255,255,0.75);">
-                        <strong style="color:white">iCall</strong><br>
-                        9152987821
+                        <strong style="color:white">iCall</strong><br>9152987821
                     </div>
                     <div style="background:rgba(255,255,255,0.05);border-radius:10px;
                                 padding:10px 14px;font-size:0.8rem;
                                 color:rgba(255,255,255,0.75);">
-                        <strong style="color:white">AASRA</strong><br>
-                        91-22-27546669
+                        <strong style="color:white">AASRA</strong><br>91-22-27546669
                     </div>
                     <div style="background:rgba(255,255,255,0.05);border-radius:10px;
                                 padding:10px 14px;font-size:0.8rem;
                                 color:rgba(255,255,255,0.75);">
-                        <strong style="color:white">Tele MANAS</strong><br>
-                        14416 (free · 24/7)
+                        <strong style="color:white">Tele MANAS</strong><br>14416 (free · 24/7)
                     </div>
                     <div style="background:rgba(255,255,255,0.05);border-radius:10px;
                                 padding:10px 14px;font-size:0.8rem;
                                 color:rgba(255,255,255,0.75);">
-                        <strong style="color:white">Vandrevala</strong><br>
-                        1860-2662-345
+                        <strong style="color:white">Vandrevala</strong><br>1860-2662-345
                     </div>
                 </div>
             </div>
@@ -910,129 +913,118 @@ elif st.session_state.page == "nearby":
 
     st.divider()
 
-    # ── Location detection ──────────────────────────────────
-    st.markdown('<div class="section-label">📍 Your Location</div>',
-                unsafe_allow_html=True)
+    # ── Location controls (collapsed by default so map is above fold) ──
+    with st.expander("📍 Change Location", expanded=False):
+        tab1, tab2 = st.tabs(["🌐 Auto-detect", "✏️ Manual input"])
 
-    tab1, tab2 = st.tabs(["🌐 Auto-detect", "✏️ Manual input"])
+        with tab1:
+            st.markdown("""
+            <div style="font-size:0.82rem;color:rgba(255,255,255,0.45);
+                        margin-bottom:12px;font-family:'DM Sans',sans-serif;">
+                Click the button below and allow location access
+                when your browser asks.
+            </div>
+            """, unsafe_allow_html=True)
 
-    with tab1:
-        st.markdown("""
-        <div style="font-size:0.82rem;color:rgba(255,255,255,0.45);
-                    margin-bottom:12px;font-family:'DM Sans',sans-serif;">
-            Click the button below and allow location access
-            when your browser asks.
-        </div>
-        """, unsafe_allow_html=True)
+            components.html(build_location_detector_html(), height=110)
 
-        loc_result = components.html(
-            build_location_detector_html(),
-            height=110
-        )
+            st.markdown("""
+            <div style="font-size:0.75rem;color:rgba(255,255,255,0.3);
+                        margin-top:8px;font-family:'DM Sans',sans-serif;">
+                If auto-detect doesn't work, paste your coordinates
+                in the Manual Input tab.
+            </div>
+            """, unsafe_allow_html=True)
 
-        # Browser geolocation returns via component value
-        # Since components.html doesn't return values directly,
-        # we use a workaround with a text input hidden below
-        st.markdown("""
-        <div style="font-size:0.75rem;color:rgba(255,255,255,0.3);
-                    margin-top:8px;font-family:'DM Sans',sans-serif;">
-            If auto-detect doesn't work, paste your coordinates
-            in the Manual Input tab.
-        </div>
-        """, unsafe_allow_html=True)
+            pasted = st.text_input(
+                label="Paste detected coordinates here",
+                placeholder="e.g. 28.635308,77.224960",
+                key="paste_coords",
+                help="After clicking Allow Location Access, copy the coordinates and paste here",
+            )
+            if st.button("✅ Use these coordinates", key="use_pasted",
+                         use_container_width=True):
+                try:
+                    parts = pasted.strip().split(",")
+                    p_lat = float(parts[0].strip())
+                    p_lng = float(parts[1].strip())
+                    st.session_state.user_lat = p_lat
+                    st.session_state.user_lng = p_lng
+                    st.session_state.nearby_places = []
+                    st.session_state.selected_place_idx = None
+                    st.session_state.nearby_error = None
+                    st.success("✅ Location set!")
+                    st.rerun()
+                except Exception:
+                    st.error("Invalid format. Use: latitude,longitude — e.g. 28.6139,77.2090")
 
-        # Coordinate paste box for auto-detect result
-        pasted = st.text_input(
-            label="Paste detected coordinates here",
-            placeholder="e.g. 28.635308,77.224960",
-            label_visibility="visible",
-            key="paste_coords",
-            help="After clicking Allow Location Access, copy the coordinates shown and paste here"
-        )
-        if st.button("✅ Use these coordinates", key="use_pasted",
-                     use_container_width=True):
-            try:
-                parts = pasted.strip().split(",")
-                p_lat = float(parts[0].strip())
-                p_lng = float(parts[1].strip())
-                st.session_state.user_lat = p_lat
-                st.session_state.user_lng = p_lng
+        with tab2:
+            city_col, btn_col = st.columns([3, 1])
+            with city_col:
+                city_input = st.text_input(
+                    label="city",
+                    label_visibility="collapsed",
+                    placeholder="Type city or area — e.g. Connaught Place Delhi",
+                    key="city_search",
+                )
+            with btn_col:
+                find_btn = st.button("🔍 Find", use_container_width=True,
+                                     type="primary", key="find_city_btn")
+
+            if find_btn and city_input.strip():
+                with st.spinner(f"Finding {city_input}..."):
+                    found_lat, found_lng, display = geocode_city(city_input)
+                if found_lat:
+                    st.session_state.user_lat = found_lat
+                    st.session_state.user_lng = found_lng
+                    st.session_state.nearby_places = []
+                    st.session_state.selected_place_idx = None
+                    st.session_state.nearby_error = None
+                    st.success(f"✅ {display[:65]}...")
+                    st.rerun()
+                else:
+                    st.error("Not found. Try a different name.")
+
+            st.write("")
+            mc1, mc2 = st.columns(2)
+            with mc1:
+                manual_lat = st.number_input(
+                    "Latitude",
+                    value=float(st.session_state.user_lat),
+                    format="%.4f", key="manual_lat",
+                )
+            with mc2:
+                manual_lng = st.number_input(
+                    "Longitude",
+                    value=float(st.session_state.user_lng),
+                    format="%.4f", key="manual_lng",
+                )
+            if st.button("Use these coordinates",
+                         use_container_width=True, key="use_manual"):
+                st.session_state.user_lat = manual_lat
+                st.session_state.user_lng = manual_lng
                 st.session_state.nearby_places = []
                 st.session_state.selected_place_idx = None
-                st.success("✅ Location set!")
+                st.session_state.nearby_error = None
                 st.rerun()
-            except Exception:
-                st.error("Invalid format. Use: latitude,longitude — e.g. 28.6139,77.2090")
 
-    with tab2:
-        city_col, btn_col = st.columns([3, 1])
-        with city_col:
-            city_input = st.text_input(
-                label="city",
-                label_visibility="collapsed",
-                placeholder="Type city or area — e.g. Connaught Place Delhi",
-                key="city_search"
-            )
-        with btn_col:
-            find_btn = st.button("🔍 Find", use_container_width=True,
-                                 type="primary", key="find_city_btn")
+            st.caption("Find your coordinates: open maps.google.com → right click your location → copy coordinates.")
 
-        if find_btn and city_input.strip():
-            with st.spinner(f"Finding {city_input}..."):
-                found_lat, found_lng, display = geocode_city(city_input)
-            if found_lat:
-                st.session_state.user_lat = found_lat
-                st.session_state.user_lng = found_lng
-                st.session_state.nearby_places = []
-                st.session_state.selected_place_idx = None
-                st.success(f"✅ {display[:65]}...")
-                st.rerun()
-            else:
-                st.error("Not found. Try a different name.")
-
-        st.write("")
-        mc1, mc2 = st.columns(2)
-        with mc1:
-            manual_lat = st.number_input(
-                "Latitude",
-                value=float(st.session_state.user_lat)
-                      if st.session_state.user_lat else 28.6139,
-                format="%.4f", key="manual_lat"
-            )
-        with mc2:
-            manual_lng = st.number_input(
-                "Longitude",
-                value=float(st.session_state.user_lng)
-                      if st.session_state.user_lng else 77.2090,
-                format="%.4f", key="manual_lng"
-            )
-        if st.button("Use these coordinates",
-                     use_container_width=True, key="use_manual"):
-            st.session_state.user_lat = manual_lat
-            st.session_state.user_lng = manual_lng
-            st.session_state.nearby_places = []
-            st.session_state.selected_place_idx = None
-            st.rerun()
-        st.caption("Find your coordinates: open maps.google.com → right click your location → copy coordinates.")
-
-    # Show current location pill
-    if st.session_state.user_lat:
-        st.markdown(f"""
-        <div style="background:rgba(124,58,237,0.08);
-                    border:1px solid rgba(124,58,237,0.2);
-                    border-radius:10px;padding:10px 16px;margin-top:8px;
-                    font-size:0.8rem;color:rgba(255,255,255,0.6);
-                    font-family:'DM Sans',sans-serif;">
-            📍 Location set to &nbsp;
-            <strong style="color:#c4b5fd">
-                {st.session_state.user_lat:.4f},
-                {st.session_state.user_lng:.4f}
-            </strong>
-        </div>
-        """, unsafe_allow_html=True)
+    # ── Current location pill ───────────────────────────────
+    st.markdown(f"""
+    <div style="background:rgba(124,58,237,0.08);
+                border:1px solid rgba(124,58,237,0.2);
+                border-radius:10px;padding:10px 16px;margin-top:8px;
+                font-size:0.8rem;color:rgba(255,255,255,0.6);
+                font-family:'DM Sans',sans-serif;">
+        📍 Location set to &nbsp;
+        <strong style="color:#c4b5fd">
+            {st.session_state.user_lat:.4f}, {st.session_state.user_lng:.4f}
+        </strong>
+    </div>
+    """, unsafe_allow_html=True)
 
     st.write("")
-    st.divider()
 
     # ── Search controls ─────────────────────────────────────
     st.markdown('<div class="section-label">What to find</div>',
@@ -1040,65 +1032,86 @@ elif st.session_state.page == "nearby":
 
     sc1, sc2, sc3 = st.columns(3)
     with sc1:
-        btn_hosp = st.button("🏥 Hospitals",
-                             use_container_width=True)
+        btn_hosp = st.button("🏥 Hospitals", use_container_width=True)
     with sc2:
-        btn_doc  = st.button("👨‍⚕️ Clinics & Doctors",
-                             use_container_width=True)
+        btn_doc  = st.button("👨‍⚕️ Clinics & Doctors", use_container_width=True)
     with sc3:
-        btn_both = st.button("🔍 Search All",
-                             use_container_width=True,
+        btn_both = st.button("🔍 Search All", use_container_width=True,
                              type="primary")
 
     radius_km = st.slider("Search radius", 1, 20, 5, format="%d km")
 
-    # ── Run search ──────────────────────────────────────────
+    # ── Decide whether to search ────────────────────────────
     search_type = None
     if btn_hosp: search_type = "hospital"
     if btn_doc:  search_type = "doctor"
     if btn_both: search_type = "both"
 
-    if search_type:
-        if not st.session_state.user_lat:
-            st.warning("Please set your location first.")
-            st.stop()
-        with st.spinner("Searching OpenStreetMap..."):
-            found = get_nearby_places(
-                st.session_state.user_lat,
-                st.session_state.user_lng,
-                search_type,
-                radius_km * 1000
-            )
-        st.session_state.nearby_places      = found
-        st.session_state.selected_place_idx = None
-        st.rerun()
+    # Auto-search whenever the location key changes (first visit + on coord change)
+    loc_key = f"{st.session_state.user_lat:.4f},{st.session_state.user_lng:.4f}"
+    auto_search = (
+        search_type is None
+        and st.session_state._nearby_loc_key != loc_key
+    )
+    if auto_search:
+        search_type = "both"
+        st.session_state._nearby_loc_key = loc_key
 
-    # ── Results ─────────────────────────────────────────────
-    places  = st.session_state.nearby_places
+    # ── Run search — never raises, never hides the map ──────
+    if search_type and st.session_state.user_lat is not None:
+        with st.spinner(f"Searching within {radius_km} km..."):
+            try:
+                found = get_nearby_places(
+                    st.session_state.user_lat,
+                    st.session_state.user_lng,
+                    search_type,
+                    radius_km * 1000,
+                )
+                st.session_state.nearby_places = found
+                st.session_state.nearby_error = None
+                if not auto_search:
+                    st.session_state.selected_place_idx = None
+            except Exception as e:
+                st.session_state.nearby_places = []
+                st.session_state.nearby_error = str(e)
+
+    # ── Map — ALWAYS rendered from here down ────────────────
+    lat = st.session_state.user_lat
+    lng = st.session_state.user_lng
+    places  = st.session_state.nearby_places or []
     sel_idx = st.session_state.get("selected_place_idx", None)
-    lat     = st.session_state.user_lat or 28.6139
-    lng     = st.session_state.user_lng or 77.2090
 
+    st.write("")
+    st.markdown('<div class="section-label">🗺️ Map</div>',
+                unsafe_allow_html=True)
+
+    # Status banner above the map (informational, not fatal)
+    if st.session_state.nearby_error:
+        st.warning(
+            f"⚠️ Couldn't reach OpenStreetMap servers "
+            f"({st.session_state.nearby_error}). "
+            f"The map below still shows your location."
+        )
+    elif places:
+        st.success(f"✅ {len(places)} place(s) found within {radius_km} km")
+    else:
+        st.info("📍 Showing your location. Press a search button above to find help nearby.")
+
+    # Render map — wrapped so any failure still leaves the page usable
+    try:
+        map_html = build_map_html(lat, lng, places, sel_idx)
+        components.html(map_html, height=440)
+    except Exception as e:
+        st.error(f"Map could not render, but the list below is still usable. ({e})")
+
+    # ── Result cards ────────────────────────────────────────
     if places:
         st.write("")
         st.markdown(
-            f'<div class="section-label">'
-            f'✅ {len(places)} places found within {radius_km} km'
-            f'</div>',
-            unsafe_allow_html=True
-        )
-
-        # Map
-        map_html = build_map_html(lat, lng, places, sel_idx)
-        components.html(map_html, height=420)
-
-        st.write("")
-        st.markdown(
             '<div class="section-label">Tap a card to highlight on map</div>',
-            unsafe_allow_html=True
+            unsafe_allow_html=True,
         )
 
-        # Place cards 2 per row
         for i in range(0, len(places), 2):
             row = st.columns(2)
             for j, col in enumerate(row):
@@ -1107,10 +1120,8 @@ elif st.session_state.page == "nearby":
                     break
                 p      = places[idx]
                 is_sel = (idx == sel_idx)
-                bg     = "rgba(124,58,237,0.15)" if is_sel \
-                         else "rgba(255,255,255,0.04)"
-                border = "rgba(124,58,237,0.5)" if is_sel \
-                         else "rgba(255,255,255,0.07)"
+                bg     = "rgba(124,58,237,0.15)" if is_sel else "rgba(255,255,255,0.04)"
+                border = "rgba(124,58,237,0.5)"  if is_sel else "rgba(255,255,255,0.07)"
 
                 with col:
                     st.markdown(f"""
@@ -1140,10 +1151,8 @@ elif st.session_state.page == "nearby":
         if sel_idx is not None and sel_idx < len(places):
             sel = places[sel_idx]
             st.write("")
-            st.markdown(
-                '<div class="section-label">Get directions</div>',
-                unsafe_allow_html=True
-            )
+            st.markdown('<div class="section-label">Get directions</div>',
+                        unsafe_allow_html=True)
             d1, d2 = st.columns(2)
             gmap = (f"https://www.google.com/maps/dir/?api=1"
                     f"&origin={lat},{lng}"
@@ -1175,19 +1184,6 @@ elif st.session_state.page == "nearby":
                     🌍 OpenStreetMap
                 </a>
                 """, unsafe_allow_html=True)
-
-    elif not places and not search_type:
-        st.markdown("""
-        <div style="text-align:center;padding:48px 20px;
-                    color:rgba(255,255,255,0.25);
-                    font-family:'DM Sans',sans-serif;
-                    font-size:0.9rem;line-height:2.2;">
-            🏥<br>
-            Set your location above then click<br>
-            <strong style="color:rgba(255,255,255,0.4)">Search All</strong>
-            to find nearby hospitals and clinics
-        </div>
-        """, unsafe_allow_html=True)
 
     st.write("")
     st.divider()
@@ -1264,8 +1260,6 @@ else:
         render_face_scan_tab()
     st.write("")
 
-
-    # Stats row
     if st.session_state.total_scans > 0:
         st.divider()
         st.markdown('<div class="section-label">Session</div>', unsafe_allow_html=True)
