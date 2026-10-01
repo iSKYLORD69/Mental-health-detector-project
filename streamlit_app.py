@@ -1359,7 +1359,7 @@ else:
 
     # ── Text Analysis ──────────────────────────────────────
     st.markdown(
-        '<div class="section-label">Write your thoughts</div>',
+        '<div class="section-label">Or write your own</div>',
         unsafe_allow_html=True
     )
 
@@ -1380,7 +1380,6 @@ else:
 
         with st.spinner("Scanning for signals..."):
 
-            # Crisis keyword escalation
             crisis_keywords = [
                 "suicide",
                 "suicidal",
@@ -1397,6 +1396,7 @@ else:
                 proba = model.predict_proba([text_input])[0]
 
             lbls = model.classes_
+
             sc = {
                 l: round(float(p), 4)
                 for l, p in zip(lbls, proba)
@@ -1404,7 +1404,7 @@ else:
 
             conf = round(float(max(proba)), 4)
 
-        # ── Save results to session ────────────────────────
+        # Save results
         st.session_state.detected_mood = pred
         st.session_state.user_text_context = text_input
         st.session_state.scores = sc
@@ -1413,9 +1413,8 @@ else:
         st.session_state.total_scans += 1
         st.session_state.mood_history.append(pred)
 
-        # ── Crisis flow ────────────────────────────────────
+        # Crisis flow
         if pred.lower() == "suicidal":
-
             with st.spinner("Connecting you to Mello..."):
                 time.sleep(1.2)
 
@@ -1424,8 +1423,6 @@ else:
                 text_input,
                 crisis=True
             )
-
-        # ── Normal results flow ────────────────────────────
         else:
             st.session_state.page = "results"
 
@@ -1469,4 +1466,3 @@ else:
         '</div>',
         unsafe_allow_html=True
     )
-
