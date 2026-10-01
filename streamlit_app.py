@@ -437,7 +437,7 @@ def mello_reply(messages, mood, ctx):
             if m["role"] in ["user", "assistant"]:
                 msgs.append({"role": m["role"], "content": m["content"]})
         r = groq_client.chat.completions.create(
-            model="llama-3.1-8b-instant",
+            model="qwen/qwen3.8-27b",
             messages=msgs,
             max_tokens=512,
             temperature=0.75
